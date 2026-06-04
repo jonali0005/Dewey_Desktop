@@ -71,15 +71,6 @@ IMAGENES = {
     "gritando": [resource_path("imagenes/Dewey-Angry.png"), resource_path("imagenes/Dewey-Angry-Jump.png")],
 }
 
-# ── Mensajes personalizados aleatorios ────────────────────────────
-# Aparecen de vez en cuando en globo de diálogo.
-MENSAJES_RANDOM = [
-    "Pienso... luego salto.",
-    "El hambre no es relativa.",
-    "¿Ya es viernes?",
-    "¡Inserte comida!",
-]
-
 # ── Frecuencia de mensajes random ─────────────────────────────────
 MENSAJE_INTERVALO_MIN = 8_000    # ms mínimo entre mensajes (8 seg)
 MENSAJE_INTERVALO_MAX = 15_000   # ms máximo entre mensajes (15 seg)
@@ -383,34 +374,36 @@ class Mascota:
         
         self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
 
-    def ia_pensar(self):
-        """Genera un pensamiento que une apps abiertas y estado emocional."""
+    def ia_pensar(self, contexto_especial=None):
+        """Genera un pensamiento que une apps, humor y eventos especiales."""
         if not IA_DISPONIBLE:
-            return random.choice(MENSAJES_RANDOM)
+            return "..."
         
-        ctx = ", ".join(self.contexto_apps) if self.contexto_apps else "el escritorio"
+        ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "el escritorio"
         
-        # Diccionario de tonos según emoción (fácil de ampliar)
         MODOS_IA = {
             self.NORMAL:   "curioso y bromista",
-            self.FELIZ:    "muy alegre, tierno y saltarín",
+            self.FELIZ:    "muy alegre, agradecido y saltarín",
             self.HAMBRE:   "un poco quejica y distraído por comida",
             self.GRITANDO: "muy dramático, sarcástico y hambriento",
-            # Añadir más emociones aquí en el futuro
         }
         
         tono = MODOS_IA.get(self.estado, "normal")
         
+        if contexto_especial:
+            user_prompt = f"EVENTO: {contexto_especial}. Humor: {tono}. Contexto apps: {ctx_apps}."
+        else:
+            user_prompt = f"Humor: {tono}. Contexto apps: {ctx_apps}."
+
         prompt = (
             f"Eres Dewey, una mascota virtual. Tu humor actual es: {tono}. "
-            "Responde de forma natural, NO digas 'Dewey:', NO digas 'Contexto:'. "
-            "Habla como una mascota real, no como una lista de programas. "
-            "REGLAS: Español, máximo 8 palabras, evita sonar como un robot. "
+            "Responde de forma natural, ultra corta (máximo 7 palabras). "
+            "REGLA: SOLO responde con el pensamiento en español. "
             "Ejemplos:\n"
-            "Humor: Alegre. Contexto: Código. Dewey: ¡Qué bien escribes! ¡Te doy un saltito!\n"
-            "Humor: Hambriento. Contexto: Web. Dewey: Menos internet y más galletas para mí.\n"
-            f"Ahora tu humor es {tono} y el usuario usa: {ctx}. "
-            "¿Qué piensas?"
+            "Evento: Comer. Dewey: ¡Qué rico! ¡Hacía falta!\n"
+            "Evento: Hambre. Dewey: ¡Oye, mi estómago ruge!\n"
+            f"Contexto: {user_prompt}\n"
+            "Dewey dice:"
         )
         
         try:
@@ -418,25 +411,18 @@ class Mascota:
                 model='tinyllama', 
                 prompt=prompt, 
                 options={
-                    "num_predict": 30, 
-                    "temperature": 0.8, # Más creatividad para que sea menos robótico
-                    "stop": ["\n", "Dewey:", "Usuario:", "Contexto:"]
+                    "num_predict": 35, 
+                    "temperature": 0.85,
+                    "stop": ["\n", "Dewey:", "Usuario:", "Evento:"]
                 }
             )
             pensamiento = res['response'].strip().replace('"', '')
-            
-            # Limpieza extra para evitar eco de instrucciones
             if ":" in pensamiento: pensamiento = pensamiento.split(":")[-1].strip()
             
-            print(f"🧠 Dewey ({self.estado}) piensa: {pensamiento}")
-            
-            if not pensamiento or len(pensamiento.split()) > 15:
-                return random.choice(MENSAJES_RANDOM)
-                
-            return pensamiento
-        except Exception as e:
-            print(f"❌ Error en la IA: {e}")
-            return random.choice(MENSAJES_RANDOM)
+            print(f"🧠 Dewey ({self.estado}) {'[Especial]' if contexto_especial else ''} piensa: {pensamiento}")
+            return pensamiento if pensamiento else "..."
+        except:
+            return "¡Hola!"
 
     # ─────────────────────────────────────────
     def _setup_imagenes(self):
@@ -556,16 +542,15 @@ class Mascota:
         if self.estado == self.FELIZ and self.hambre > 5:
             nuevo = self.NORMAL
 
-        # Globo al cambiar a estado de hambre
+        # Reacción IA al cambiar a estado de hambre
         if nuevo != self._ultimo_estado and nuevo in (self.HAMBRE, self.GRITANDO):
-            msgs = {
-                self.HAMBRE:   ["Tengo hambre... 😿", "¿Dónde está mi comida?",
-                                "Mi estómago gruñe..."],
-                self.GRITANDO: ["¡¡TENGO HAMBREEE!!", "¡¡ALIMÉNTAME YA!!",
-                                "¡¡SOY DRAMÁTICO POR HAMBRE!!"],
-            }
-            cx, cy = self._centro_pantalla()
-            self.globo.mostrar(random.choice(msgs[nuevo]), cx, int(self.y))
+            def reaccionar_hambre():
+                ev = "Tengo mucha hambre" if nuevo == self.GRITANDO else "Empiezo a tener hambre"
+                texto = self.ia_pensar(contexto_especial=ev)
+                cx, cy = self._centro_pantalla()
+                self.root.after(0, lambda: self.globo.mostrar(texto, cx, int(self.y)))
+            
+            threading.Thread(target=reaccionar_hambre, daemon=True).start()
 
         self._ultimo_estado = nuevo
         self.estado = nuevo
@@ -589,10 +574,13 @@ class Mascota:
         if comida in self.comidas:
             self.comidas.remove(comida)
         comida.destroy()
-        msgs = ["¡Ñam ñam! 😋", "¡Delicioso!", "¡Gracias!",
-                "¡Más, más! 🥰", "¡Eres el mejor!"]
-        cx, cy = self._centro_pantalla()
-        self.globo.mostrar(random.choice(msgs), cx, int(self.y))
+
+        def reaccionar_comida():
+            texto = self.ia_pensar(contexto_especial="Acabo de comer algo delicioso")
+            cx, cy = self._centro_pantalla()
+            self.root.after(0, lambda: self.globo.mostrar(texto, cx, int(self.y)))
+        
+        threading.Thread(target=reaccionar_comida, daemon=True).start()
 
     # ─────────────────────────────────────────
     def _loop_colision_comida(self):
