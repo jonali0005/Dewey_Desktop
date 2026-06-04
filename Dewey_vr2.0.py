@@ -18,6 +18,7 @@ import os
 
 import sys
 import threading
+import sqlite3
 
 # Intentar importar librerías para la IA
 try:
@@ -33,6 +34,49 @@ APPS_IGNORAR = {
     "python.exe", "conhost.exe", "svchost.exe", "runtimebroker.exe",
     "idle", "system", "searchhost.exe"
 }
+
+DB_PATH = "dewey_memoria.db"
+
+# ══════════════════════════════════════════════════════════════════
+#  BASE DE DATOS: SQLite
+# ══════════════════════════════════════════════════════════════════
+def iniciar_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS habitos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            aplicacion TEXT,
+            estado_mascota TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def guardar_habito(app, estado):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO habitos (aplicacion, estado_mascota) VALUES (?, ?)", (app, estado))
+        conn.commit()
+        conn.close()
+    except: pass
+
+def obtener_resumen_habitos():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT aplicacion, COUNT(aplicacion) as freq 
+            FROM habitos 
+            GROUP BY aplicacion 
+            ORDER BY freq DESC LIMIT 3
+        ''')
+        res = cursor.fetchall()
+        conn.close()
+        return ", ".join([f"{a} ({f} veces)" for a, f in res])
+    except: return "ninguno todavía"
 
 def resource_path(relative_path):
     """
@@ -292,6 +336,7 @@ class Mascota:
     GRITANDO = "gritando"
 
     def __init__(self):
+        iniciar_db()
         self.root = tk.Tk()
         self.root.withdraw()
 
@@ -358,7 +403,7 @@ class Mascota:
 
     # ─────────────────────────────────────────
     def _loop_contexto_ia(self):
-        """Actualiza la lista de programas en ejecución para la IA."""
+        """Actualiza la lista de programas y guarda en la base de datos."""
         if IA_DISPONIBLE:
             def scan():
                 apps = set()
@@ -367,7 +412,11 @@ class Mascota:
                         name = proc.info['name'].lower()
                         if name not in APPS_IGNORAR and not name.startswith("service"):
                             apps.add(name.replace(".exe", "").capitalize())
-                    self.contexto_apps = list(apps)[:10] # Solo top 10
+                    self.contexto_apps = list(apps)[:10]
+                    
+                    # Guardar hábito (la app principal)
+                    if self.contexto_apps:
+                        guardar_habito(self.contexto_apps[0], self.estado)
                 except: pass
             
             threading.Thread(target=scan, daemon=True).start()
@@ -375,11 +424,12 @@ class Mascota:
         self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
 
     def ia_pensar(self, contexto_especial=None):
-        """Genera un pensamiento que une apps, humor y eventos especiales."""
+        """Genera un pensamiento que une apps, humor, eventos y MEMORIA de hábitos."""
         if not IA_DISPONIBLE:
             return "..."
         
         ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "el escritorio"
+        habitos = obtener_resumen_habitos()
         
         MODOS_IA = {
             self.NORMAL:   "curioso y bromista",
@@ -391,17 +441,15 @@ class Mascota:
         tono = MODOS_IA.get(self.estado, "normal")
         
         if contexto_especial:
-            user_prompt = f"EVENTO: {contexto_especial}. Humor: {tono}. Contexto apps: {ctx_apps}."
+            user_prompt = f"EVENTO: {contexto_especial}. Humor: {tono}. Apps: {ctx_apps}."
         else:
-            user_prompt = f"Humor: {tono}. Contexto apps: {ctx_apps}."
+            user_prompt = f"Humor: {tono}. Apps hoy: {ctx_apps}. Memoria de hábitos: {habitos}."
 
         prompt = (
-            f"Eres Dewey, una mascota virtual. Tu humor actual es: {tono}. "
-            "Responde de forma natural, ultra corta (máximo 7 palabras). "
-            "REGLA: SOLO responde con el pensamiento en español. "
-            "Ejemplos:\n"
-            "Evento: Comer. Dewey: ¡Qué rico! ¡Hacía falta!\n"
-            "Evento: Hambre. Dewey: ¡Oye, mi estómago ruge!\n"
+            f"Eres Dewey, mascota virtual con memoria. Humor: {tono}. "
+            "Habla de forma natural (máximo 12 palabras) en ESPAÑOL. "
+            "Usa tu memoria de hábitos para comentar algo. "
+            "REGLA: SOLO responde con el pensamiento. "
             f"Contexto: {user_prompt}\n"
             "Dewey dice:"
         )
@@ -411,15 +459,15 @@ class Mascota:
                 model='tinyllama', 
                 prompt=prompt, 
                 options={
-                    "num_predict": 35, 
-                    "temperature": 0.85,
+                    "num_predict": 40, 
+                    "temperature": 0.8,
                     "stop": ["\n", "Dewey:", "Usuario:", "Evento:"]
                 }
             )
             pensamiento = res['response'].strip().replace('"', '')
             if ":" in pensamiento: pensamiento = pensamiento.split(":")[-1].strip()
             
-            print(f"🧠 Dewey ({self.estado}) {'[Especial]' if contexto_especial else ''} piensa: {pensamiento}")
+            print(f"🧠 Dewey ({self.estado}) piensa con memoria: {pensamiento}")
             return pensamiento if pensamiento else "..."
         except:
             return "¡Hola!"
