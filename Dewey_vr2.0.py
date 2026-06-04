@@ -404,39 +404,38 @@ class Mascota:
         self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
 
     def ia_pensar(self):
-        """Genera un pensamiento usando Ollama con restricciones estrictas."""
+        """Genera un pensamiento usando Ollama con ejemplos para guiar a TinyLlama."""
         if not IA_DISPONIBLE:
             return random.choice(MENSAJES_RANDOM)
         
-        # Filtrar apps para que no parezca una lista técnica
         ctx = ", ".join(self.contexto_apps) if self.contexto_apps else "nada"
         
-        # Prompt más directo y con restricciones de formato
-        system_rules = (
-            "Eres Dewey, una mascota virtual sarcástica y perezosa. "
-            "REGLA DE ORO: Responde ÚNICAMENTE en español. "
-            "REGLA 2: Máximo 6 palabras. "
-            "REGLA 3: No menciones nombres de archivos o apps directamente. "
-            "REGLA 4: No saludes ni des explicaciones. Solo el pensamiento."
+        # Prompt con ejemplos (Few-shot) para que TinyLlama entienda el formato
+        prompt = (
+            "Eres Dewey, una mascota sarcástica. Responde en ESPAÑOL. Máximo 6 palabras. "
+            "Ejemplos:\n"
+            "Usuario hace: Programando. Dewey dice: ¿Otra vez escribiendo código?\n"
+            "Usuario hace: Viendo videos. Dewey dice: Qué productivo eres hoy...\n"
+            "Usuario hace: Nada. Dewey dice: Me aburro más que tú.\n"
+            f"Ahora el usuario tiene abierto: {ctx}. "
+            "Dewey dice:"
         )
         
-        user_prompt = f"Contexto de apps: {ctx}. Di algo corto y gracioso sobre lo que hago o sobre tu pereza."
-        
         try:
-            res = ollama.chat(model='tinyllama', messages=[
-                {'role': 'system', 'content': system_rules},
-                {'role': 'user', 'content': user_prompt}
-            ])
+            res = ollama.generate(model='tinyllama', prompt=prompt, stop=["\n", "Dewey:"], options={"num_predict": 20})
+            pensamiento = res['response'].strip().replace('"', '')
             
-            pensamiento = res['message']['content'].strip().split('\n')[0] # Solo la primera línea
-            pensamiento = pensamiento.replace('"', '').replace('Dewey:', '').strip()
+            # Debug en consola para ver qué está pensando realmente
+            print(f"🧠 Dewey piensa (IA): {pensamiento}")
             
-            # Si la IA se queda callada o falla la restricción, usar fallback
-            if not pensamiento or len(pensamiento.split()) > 10:
+            # Validaciones básicas
+            if not pensamiento or len(pensamiento.split()) > 12:
+                print("⚠️ Pensamiento filtrado por longitud o vacío.")
                 return random.choice(MENSAJES_RANDOM)
                 
             return pensamiento
-        except:
+        except Exception as e:
+            print(f"❌ Error en la IA: {e}")
             return random.choice(MENSAJES_RANDOM)
 
     # ─────────────────────────────────────────
