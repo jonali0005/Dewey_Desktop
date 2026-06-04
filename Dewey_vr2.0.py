@@ -17,6 +17,22 @@ import math
 import os
 
 import sys
+import threading
+
+# Intentar importar librerías para la IA
+try:
+    import ollama
+    import psutil
+    IA_DISPONIBLE = True
+except ImportError:
+    IA_DISPONIBLE = False
+
+# Programas comunes a ignorar para el contexto
+APPS_IGNORAR = {
+    "System Settings", "Windows Explorer", "Task Manager", "ollama.exe",
+    "python.exe", "conhost.exe", "svchost.exe", "runtimebroker.exe",
+    "idle", "system", "searchhost.exe"
+}
 
 def resource_path(relative_path):
     """
@@ -335,6 +351,7 @@ class Mascota:
         self.hambre         = 0.0
         self.estado         = self.NORMAL
         self._ultimo_estado = self.NORMAL
+        self.contexto_apps  = []
 
         # ── Movimiento ────────────────────────────
         sw = self.root.winfo_screenwidth()
@@ -364,8 +381,47 @@ class Mascota:
         self._loop_comida()
         self._loop_colision_comida()
         self._loop_mensaje_random()
+        self._loop_contexto_ia()
 
         self.root.mainloop()
+
+    # ─────────────────────────────────────────
+    def _loop_contexto_ia(self):
+        """Actualiza la lista de programas en ejecución para la IA."""
+        if IA_DISPONIBLE:
+            def scan():
+                apps = set()
+                try:
+                    for proc in psutil.process_iter(['name']):
+                        name = proc.info['name'].lower()
+                        if name not in APPS_IGNORAR and not name.startswith("service"):
+                            apps.add(name.replace(".exe", "").capitalize())
+                    self.contexto_apps = list(apps)[:10] # Solo top 10
+                except: pass
+            
+            threading.Thread(target=scan, daemon=True).start()
+        
+        self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
+
+    def ia_pensar(self):
+        """Genera un pensamiento usando Ollama basado en el contexto."""
+        if not IA_DISPONIBLE:
+            return random.choice(MENSAJES_RANDOM)
+        
+        ctx = ", ".join(self.contexto_apps) if self.contexto_apps else "nada especial"
+        prompt = (f"Eres Dewey, una mascota virtual traviesa en el escritorio del usuario. "
+                  f"El usuario tiene estas apps abiertas: {ctx}. "
+                  f"Genera un pensamiento o comentario MUY CORTO (máximo 10 palabras) sobre lo que hace el usuario o sobre ti. "
+                  f"Sé gracioso, sarcástico o curioso. No uses emojis de gatos, usa otros si quieres.")
+        
+        try:
+            res = ollama.chat(model='tinyllama', messages=[
+                {'role': 'system', 'content': 'Eres Dewey. Comentarios ultra cortos y sarcásticos en español.'},
+                {'role': 'user', 'content': prompt}
+            ])
+            return res['message']['content'].strip().replace('"', '')
+        except:
+            return random.choice(MENSAJES_RANDOM)
 
     # ─────────────────────────────────────────
     def _setup_imagenes(self):
@@ -541,9 +597,15 @@ class Mascota:
 
     # ─────────────────────────────────────────
     def _loop_mensaje_random(self):
-        if self.estado == self.NORMAL and MENSAJES_RANDOM:
-            cx, cy = self._centro_pantalla()
-            self.globo.mostrar(random.choice(MENSAJES_RANDOM), cx, int(self.y))
+        if self.estado == self.NORMAL:
+            def pensar_y_mostrar():
+                texto = self.ia_pensar()
+                if texto:
+                    cx, cy = self._centro_pantalla()
+                    self.root.after(0, lambda: self.globo.mostrar(texto, cx, int(self.y)))
+            
+            threading.Thread(target=pensar_y_mostrar, daemon=True).start()
+
         siguiente = random.randint(MENSAJE_INTERVALO_MIN, MENSAJE_INTERVALO_MAX)
         self.root.after(siguiente, self._loop_mensaje_random)
 
@@ -552,16 +614,19 @@ class Mascota:
 #  PUNTO DE ENTRADA
 # ══════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    print("🐾 Mascota de Escritorio v2")
+    print("🐾 Dewey_vr2.0 — Edición IA Autónoma")
     print("━" * 40)
     print("  • Se mueve y salta por tu pantalla")
     print("  • Aparece comida cada ~13 seg → arrástrala a la mascota")
     print("  • Sin comida → empieza a gritar")
-    print("  • Mensajes aleatorios cada 15–30 seg")
+    print("  • 🧠 IA AUTÓNOMA: Dewey observa tus apps y piensa por sí solo")
+    print()
+    if IA_DISPONIBLE:
+        print("  ✓ Ollama & psutil detectados — Cerebro activado")
+    else:
+        print("  ✗ IA no disponible — Usando frases predefinidas")
+        print("    Instala: pip install ollama psutil")
     print()
     print("  ✓ Imágenes PNG habilitadas")
-    print("    Edita IMAGENES{} al inicio del archivo para personalizarlas")
-    print()
-    print("  Edita MENSAJES_RANDOM[] para personalizar los mensajes")
     print("━" * 40 + "\n")
     Mascota()
