@@ -32,14 +32,13 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-# Pillow es opcional: sin él se usan emojis como fallback
+# Pillow es obligatorio para usar imágenes PNG
 try:
     from PIL import Image, ImageTk
-    PIL_DISPONIBLE = True
 except ImportError:
-    PIL_DISPONIBLE = False
-    print("⚠  Pillow no encontrado. Usando emojis como fallback.")
-    print("   Para usar imágenes PNG instala: pip install pillow\n")
+    print("❌ Error: Pillow no encontrado. Es obligatorio para esta versión.")
+    print("   Instálalo con: pip install pillow\n")
+    sys.exit(1)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -47,21 +46,13 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════
 
 # ── Imágenes de la mascota por estado ─────────────────────────────
-# Pon la ruta a tus PNG sin fondo. Si no existe el archivo, usa emoji.
+# Pon la ruta a tus PNG sin fondo.
 # Formato: [Imagen_Normal, Imagen_Salto]
 IMAGENES = {
     "normal":   [resource_path("imagenes/Dewey-Base.png"), resource_path("imagenes/Dewey-Jump.png")],
     "feliz":    [resource_path("imagenes/Dewey-Happy.png"), resource_path("imagenes/Dewey-Happy-Jump.png")],
     "hambre":   [resource_path("imagenes/Dewey-Hungry.png"), resource_path("imagenes/Dewey-Hungry.png")],
     "gritando": [resource_path("imagenes/Dewey-Angry.png"), resource_path("imagenes/Dewey-Angry-Jump.png")],
-}
-
-# ── Emojis de respaldo (cuando no hay imagen) ─────────────────────
-EMOJIS_ESTADO = {
-    "normal":   "🐱",
-    "feliz":    "😸",
-    "hambre":   "🙀",
-    "gritando": "😱",
 }
 
 # ── Mensajes personalizados aleatorios ────────────────────────────
@@ -129,9 +120,8 @@ CONFIG = {
 def cargar_imagen(path: str, size: int):
     """
     Carga un PNG con transparencia y lo convierte a PhotoImage.
-    Devuelve None si falla o Pillow no está disponible.
     """
-    if not PIL_DISPONIBLE or not path:
+    if not path:
         return None
     ruta = os.path.abspath(path)
     if not os.path.isfile(ruta):
@@ -395,9 +385,8 @@ class Mascota:
             self.pet_img_item = self.canvas.create_image(
                 cx, cy, image=img_inicial, anchor="center")
         else:
-            self.pet_text_item = self.canvas.create_text(
-                cx, cy, text=EMOJIS_ESTADO[self.NORMAL],
-                font=("Arial", 38))
+            print("❌ Error: No se pudo cargar la imagen inicial (normal).")
+            sys.exit(1)
 
     def _usar_imagenes(self):
         return any(len(imgs) > 0 for imgs in self._tk_images.values())
@@ -473,16 +462,11 @@ class Mascota:
         self.root.after(CONFIG["move_intervalo"], self._loop_movimiento)
 
     def _actualizar_apariencia(self):
-        if self._usar_imagenes():
-            imgs = self._tk_images.get(self.estado, self._tk_images.get(self.NORMAL))
-            if imgs and self.pet_img_item:
-                # Si está saltando (fase alta del seno), usar imagen de salto si existe
-                idx = 1 if len(imgs) > 1 and abs(math.sin(self.salto_phase)) > 0.5 else 0
-                self.canvas.itemconfig(self.pet_img_item, image=imgs[idx])
-        else:
-            if self.pet_text_item:
-                self.canvas.itemconfig(self.pet_text_item,
-                                       text=EMOJIS_ESTADO.get(self.estado, "🐱"))
+        imgs = self._tk_images.get(self.estado, self._tk_images.get(self.NORMAL))
+        if imgs and self.pet_img_item:
+            # Si está saltando (fase alta del seno), usar imagen de salto si existe
+            idx = 1 if len(imgs) > 1 and abs(math.sin(self.salto_phase)) > 0.5 else 0
+            self.canvas.itemconfig(self.pet_img_item, image=imgs[idx])
 
     # ─────────────────────────────────────────
     def _loop_hambre(self):
@@ -571,16 +555,12 @@ if __name__ == "__main__":
     print("🐾 Mascota de Escritorio v2")
     print("━" * 40)
     print("  • Se mueve y salta por tu pantalla")
-    print("  • Aparece comida cada ~8 seg → arrástrala a la mascota")
+    print("  • Aparece comida cada ~13 seg → arrástrala a la mascota")
     print("  • Sin comida → empieza a gritar")
-    print("  • Mensajes aleatorios cada 15–35 seg")
+    print("  • Mensajes aleatorios cada 15–30 seg")
     print()
-    if PIL_DISPONIBLE:
-        print("  ✓ Pillow disponible — puedes usar imágenes PNG")
-        print("    Edita IMAGENES{} al inicio del archivo")
-    else:
-        print("  ✗ Pillow no instalado → usando emojis")
-        print("    Para usar PNG:  pip install pillow")
+    print("  ✓ Imágenes PNG habilitadas")
+    print("    Edita IMAGENES{} al inicio del archivo para personalizarlas")
     print()
     print("  Edita MENSAJES_RANDOM[] para personalizar los mensajes")
     print("━" * 40 + "\n")
