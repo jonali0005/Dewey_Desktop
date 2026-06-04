@@ -384,20 +384,23 @@ class Mascota:
         self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
 
     def ia_pensar(self):
-        """Genera un pensamiento usando Ollama con ejemplos para guiar a TinyLlama."""
+        """Genera un pensamiento con la personalidad curiosa, graciosa y consejera de Dewey."""
         if not IA_DISPONIBLE:
             return random.choice(MENSAJES_RANDOM)
         
-        ctx = ", ".join(self.contexto_apps) if self.contexto_apps else "nada"
+        ctx = ", ".join(self.contexto_apps) if self.contexto_apps else "el escritorio"
         
-        # Prompt con ejemplos (Few-shot) para que TinyLlama entienda el formato
+        # Prompt que define la nueva personalidad: Curioso, Divertido y Consejero
         prompt = (
-            "Eres Dewey, una mascota sarcástica. Responde en ESPAÑOL. Máximo 6 palabras. "
+            "Eres Dewey, una mascota de escritorio que ama dar saltitos. "
+            "Personalidad: Curioso, gracioso, divertido y MUY CONSEJERO. "
+            "REGLAS: Responde en ESPAÑOL, máximo 8 palabras, sé tierno pero bromista. "
             "Ejemplos:\n"
-            "Usuario hace: Programando. Dewey dice: ¿Otra vez escribiendo código?\n"
-            "Usuario hace: Viendo videos. Dewey dice: Qué productivo eres hoy...\n"
-            "Usuario hace: Nada. Dewey dice: Me aburro más que tú.\n"
-            f"Ahora el usuario tiene abierto: {ctx}. "
+            "Contexto: Navegador. Dewey: ¡Cuántas pestañas! ¿Y si descansamos un poco?\n"
+            "Contexto: Código. Dewey: ¡Ese bug no se quitará saltando! Revisa la línea 10.\n"
+            "Contexto: Nada. Dewey: ¡Mira mis saltos! Deberías estirarte tú también.\n"
+            "Contexto: Música. Dewey: ¡Qué buen ritmo! ¡Baila conmigo!\n"
+            f"Ahora el usuario usa: {ctx}. "
             "Dewey dice:"
         )
         
@@ -406,18 +409,16 @@ class Mascota:
                 model='tinyllama', 
                 prompt=prompt, 
                 options={
-                    "num_predict": 25, 
-                    "stop": ["\n", "Dewey:", "Usuario:"]
+                    "num_predict": 30, 
+                    "stop": ["\n", "Dewey:", "Usuario:", "Contexto:"]
                 }
             )
             pensamiento = res['response'].strip().replace('"', '')
             
-            # Debug en consola para ver qué está pensando realmente
-            print(f"🧠 Dewey piensa (IA): {pensamiento}")
+            # Debug en consola
+            print(f"🧠 Dewey Curioso piensa: {pensamiento}")
             
-            # Validaciones básicas
-            if not pensamiento or len(pensamiento.split()) > 12:
-                print("⚠️ Pensamiento filtrado por longitud o vacío.")
+            if not pensamiento or len(pensamiento.split()) > 15:
                 return random.choice(MENSAJES_RANDOM)
                 
             return pensamiento
