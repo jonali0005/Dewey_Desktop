@@ -1,0 +1,587 @@
+"""
+🐾 Dewey_vr2.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Una mascota virtual que vive en tu escritorio.
+Soporta imágenes PNG personalizadas y mensajes aleatorios.
+
+Requisitos:
+  pip install pillow
+
+Ejecutar:
+  python Dewey_vr2.0.py
+"""
+
+import tkinter as tk
+import random
+import math
+import os
+
+import sys
+
+def resource_path(relative_path):
+    """
+    Obtiene la ruta absoluta del recurso,
+    compatible con PyInstaller.
+    """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        #base_path = os.path.abspath(".")
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
+
+# Pillow es opcional: sin él se usan emojis como fallback
+try:
+    from PIL import Image, ImageTk
+    PIL_DISPONIBLE = True
+except ImportError:
+    PIL_DISPONIBLE = False
+    print("⚠  Pillow no encontrado. Usando emojis como fallback.")
+    print("   Para usar imágenes PNG instala: pip install pillow\n")
+
+
+# ══════════════════════════════════════════════════════════════════
+#  🎨  PERSONALIZACIÓN  ← Edita aquí todo lo que quieras cambiar
+# ══════════════════════════════════════════════════════════════════
+
+# ── Imágenes de la mascota por estado ─────────────────────────────
+# Pon la ruta a tus PNG sin fondo. Si no existe el archivo, usa emoji.
+# Formato: [Imagen_Normal, Imagen_Salto]
+IMAGENES = {
+    "normal":   [resource_path("imagenes/Dewey-Base.png"), resource_path("imagenes/Dewey-Jump.png")],
+    "feliz":    [resource_path("imagenes/Dewey-Happy.png"), resource_path("imagenes/Dewey-Happy-Jump.png")],
+    "hambre":   [resource_path("imagenes/Dewey-Hungry.png"), resource_path("imagenes/Dewey-Hungry.png")],
+    "gritando": [resource_path("imagenes/Dewey-Angry.png"), resource_path("imagenes/Dewey-Angry-Jump.png")],
+}
+
+# ── Emojis de respaldo (cuando no hay imagen) ─────────────────────
+EMOJIS_ESTADO = {
+    "normal":   "🐱",
+    "feliz":    "😸",
+    "hambre":   "🙀",
+    "gritando": "😱",
+}
+
+# ── Mensajes personalizados aleatorios ────────────────────────────
+# Aparecen de vez en cuando en globo de diálogo.
+MENSAJES_RANDOM = [
+    # Curiosos / filosóficos
+    "¿Habrá vida en Marte?",
+    "Pienso... luego salto.",
+    "¿Y si el universo es un sueño?",
+    "El tiempo es relativo. El hambre, no.",
+
+    # Cotidianos
+    "¿Cuándo es la cena?",
+    "Hoy me siento aventurero 🗺️",
+    "Necesito un abrazo.",
+    "Lunes... otra vez.",
+    "¿Ya es viernes?",
+
+    # Graciosos
+    "Toco el suelo con los pies, pero soñar es gratis.",
+    "En mis tiempos esto no pasaba.",
+    "¡Inserte comida para continuar!",
+    "Error 404: comida no encontrada.",
+    "Loading... cargando carisma...",
+
+    # Motivacionales
+    "¡Tú puedes! (yo también, pero con comida).",
+    "Cada salto es un nuevo comienzo.",
+    "Sigue adelante, pequeño humano.",
+    "Eso brad",
+
+    # Agrega los tuyos aquí ↓
+]
+
+# ── Frecuencia de mensajes random ─────────────────────────────────
+MENSAJE_INTERVALO_MIN = 15_000   # ms mínimo entre mensajes (15 seg)
+MENSAJE_INTERVALO_MAX = 30_000   # ms máximo entre mensajes (35 seg)
+MENSAJE_DURACION      = 7_000    # ms que permanece visible el mensaje
+
+# ── Comidas disponibles ────────────────────────────────────────────
+COMIDAS = ["🍎", "🍕", "🍩", "🐟", "🍌", "🧀", "🍗", "🍓"]
+
+# ══════════════════════════════════════════════════════════════════
+#  ⚙️  CONFIGURACIÓN TÉCNICA
+# ══════════════════════════════════════════════════════════════════
+CONFIG = {
+    "hambre_max":          100,
+    "hambre_velocidad":    0.05,
+    "hambre_grito":        60,
+    "comida_intervalo":    13_000,
+    "comida_max":          6,
+    "salto_altura":        18,
+    "salto_velocidad":     0.15,
+    "move_intervalo":      40,
+    "nueva_dir_intervalo": 120,
+    "pet_size":            90,
+    "pet_img_size":        80,
+    "comida_size":         40,
+}
+
+
+# ══════════════════════════════════════════════════════════════════
+#  UTILIDADES
+# ══════════════════════════════════════════════════════════════════
+def cargar_imagen(path: str, size: int):
+    """
+    Carga un PNG con transparencia y lo convierte a PhotoImage.
+    Devuelve None si falla o Pillow no está disponible.
+    """
+    if not PIL_DISPONIBLE or not path:
+        return None
+    ruta = os.path.abspath(path)
+    if not os.path.isfile(ruta):
+        print(f"⚠  Imagen no encontrada: {ruta}")
+        return None
+    try:
+        img = Image.open(ruta).convert("RGBA")
+        img = img.resize((size, size), Image.NEAREST)
+        return ImageTk.PhotoImage(img)
+    except Exception as e:
+        print(f"⚠  Error cargando imagen '{ruta}': {e}")
+        return None
+
+
+# ══════════════════════════════════════════════════════════════════
+#  GLOBO DE DIÁLOGO
+# ══════════════════════════════════════════════════════════════════
+class GloboDialogo:
+    """Ventana flotante que muestra un mensaje encima de la mascota."""
+
+    def __init__(self, root):
+        self.root = root
+        self.win = None
+        self._ocultar_id = None
+
+    def mostrar(self, texto: str, x: int, y: int):
+        self._cancelar_ocultar()
+        if self.win:
+            try:
+                self.win.destroy()
+            except Exception:
+                pass
+
+        self.win = tk.Toplevel(self.root)
+        self.win.overrideredirect(True)
+        self.win.attributes("-topmost", True)
+        self.win.config(bg="white")
+        try:
+            self.win.attributes("-transparentcolor", "white")
+        except Exception:
+            pass
+
+        c = tk.Canvas(self.win, bg="white", highlightthickness=0)
+        c.pack()
+
+        PADDING = 12
+        MAX_W   = 220
+        # Medir texto
+        lbl = tk.Label(self.root, text=texto, font=("Segoe UI", 10),
+                       wraplength=MAX_W - PADDING * 2)
+        lbl.update_idletasks()
+        tw = min(lbl.winfo_reqwidth() + PADDING * 2, MAX_W)
+        th = lbl.winfo_reqheight() + PADDING * 2 + 10
+        lbl.destroy()
+
+        self._dibujar_burbuja(c, tw, th)
+        c.config(width=tw, height=th)
+        c.create_text(tw // 2, (th - 10) // 2, text=texto,
+                      font=("Segoe UI", 10), fill="#222222",
+                      width=tw - PADDING * 2, justify="center")
+
+        bx = x - tw // 2
+        by = y - th - 4
+        self.win.geometry(f"+{bx}+{by}")
+        self._ocultar_id = self.root.after(MENSAJE_DURACION, self.ocultar)
+
+    def _dibujar_burbuja(self, c, w, h):
+        cola_w, cola_h = 12, 10
+        bh = h - cola_h
+        puntos = [
+            12, 0,  w - 12, 0,
+            w,  12, w, bh - 12,
+            w,  bh, w // 2 + cola_w, bh,
+            w // 2, h,
+            w // 2 - cola_w, bh,
+            0, bh,  0, 12,
+        ]
+        c.create_polygon(puntos, fill="#FFFDE7", outline="#BDBDBD",
+                         smooth=False, width=1.5)
+
+    def ocultar(self):
+        self._cancelar_ocultar()
+        if self.win:
+            try:
+                self.win.destroy()
+            except Exception:
+                pass
+            self.win = None
+
+    def _cancelar_ocultar(self):
+        if self._ocultar_id:
+            try:
+                self.root.after_cancel(self._ocultar_id)
+            except Exception:
+                pass
+            self._ocultar_id = None
+
+    def mover(self, x: int, y: int):
+        if self.win:
+            try:
+                tw = self.win.winfo_width()
+                th = self.win.winfo_height()
+                self.win.geometry(f"+{x - tw // 2}+{y - th - 4}")
+            except Exception:
+                pass
+
+
+# ══════════════════════════════════════════════════════════════════
+#  CLASE: COMIDA
+# ══════════════════════════════════════════════════════════════════
+class Comida:
+    def __init__(self, root, emoji, x, y, on_eaten):
+        self.root = root
+        self.emoji = emoji
+        self.on_eaten = on_eaten
+        self._drag_offset = (0, 0)
+        self._being_dragged = False
+
+        size = CONFIG["comida_size"]
+        self.win = tk.Toplevel(root)
+        self.win.overrideredirect(True)
+        self.win.attributes("-topmost", True)
+        self.win.config(bg="white")
+        try:
+            self.win.attributes("-transparentcolor", "white")
+        except Exception:
+            pass
+
+        self.canvas = tk.Canvas(self.win, width=size, height=size,
+                                bg="white", highlightthickness=0)
+        self.canvas.pack()
+        self.label = self.canvas.create_text(size // 2, size // 2,
+                                             text=emoji, font=("Arial", 22))
+        self.win.geometry(f"{size}x{size}+{x}+{y}")
+
+        self.canvas.bind("<ButtonPress-1>",   self._drag_start)
+        self.canvas.bind("<B1-Motion>",       self._drag_motion)
+        self.canvas.bind("<ButtonRelease-1>", self._drag_end)
+
+        self._appear_scale = 0.3
+        self._animate_appear()
+
+    def _animate_appear(self):
+        if self._appear_scale < 1.0:
+            self._appear_scale = min(1.0, self._appear_scale + 0.1)
+            s = max(1, int(CONFIG["comida_size"] * self._appear_scale))
+            self.canvas.config(width=s, height=s)
+            self.canvas.coords(self.label, s // 2, s // 2)
+            self.root.after(20, self._animate_appear)
+
+    def _drag_start(self, e):
+        self._drag_offset = (e.x, e.y)
+        self._being_dragged = True
+
+    def _drag_motion(self, e):
+        nx = self.win.winfo_x() + e.x - self._drag_offset[0]
+        ny = self.win.winfo_y() + e.y - self._drag_offset[1]
+        self.win.geometry(f"+{nx}+{ny}")
+
+    def _drag_end(self, e):
+        self._being_dragged = False
+
+    def get_center(self):
+        return (self.win.winfo_x() + CONFIG["comida_size"] // 2,
+                self.win.winfo_y() + CONFIG["comida_size"] // 2)
+
+    def destroy(self):
+        try:
+            self.win.destroy()
+        except Exception:
+            pass
+
+
+# ══════════════════════════════════════════════════════════════════
+#  CLASE: MASCOTA
+# ══════════════════════════════════════════════════════════════════
+class Mascota:
+    NORMAL   = "normal"
+    FELIZ    = "feliz"
+    HAMBRE   = "hambre"
+    GRITANDO = "gritando"
+
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.withdraw()
+
+        # ── Ventana mascota ───────────────────────
+        self.win = tk.Toplevel(self.root)
+        self.win.overrideredirect(True)
+        self.win.attributes("-topmost", True)
+        self.win.config(bg="white")
+        try:
+            self.win.attributes("-transparentcolor", "white")
+        except Exception:
+            pass
+
+        size = CONFIG["pet_size"]
+        self.canvas = tk.Canvas(self.win, width=size, height=size,
+                                bg="white", highlightthickness=0)
+        self.canvas.pack()
+
+        self.pet_img_item  = None
+        self.pet_text_item = None
+        self._tk_images    = {}
+        self._setup_imagenes()
+
+        # ── Globo de diálogo ──────────────────────
+        self.globo = GloboDialogo(self.root)
+
+        # ── Estado ───────────────────────────────
+        self.hambre         = 0.0
+        self.estado         = self.NORMAL
+        self._ultimo_estado = self.NORMAL
+
+        # ── Movimiento ────────────────────────────
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        self.x           = float(random.randint(100, sw - 200))
+        self.y           = float(random.randint(100, sh - 200))
+        self.vx          = random.choice([-1.5, 1.5])
+        self.dir_timer   = 0
+        self.salto_phase = 0.0
+        self.base_y      = self.y
+
+        # ── Comidas ───────────────────────────────
+        self.comidas: list[Comida] = []
+
+        # ── Drag mascota ──────────────────────────
+        self._drag_offset = (0, 0)
+        self.canvas.bind("<ButtonPress-1>", self._drag_start)
+        self.canvas.bind("<B1-Motion>",     self._drag_motion)
+        #self.canvas.bind("<Button-3>", self._cerrar)
+        self.canvas.bind("<Button-3>", self._cerrar)
+        self.win.bind("<Button-3>", self._cerrar)
+
+        # ── Arrancar loops ────────────────────────
+        self._posicionar()
+        self._loop_movimiento()
+        self._loop_hambre()
+        self._loop_comida()
+        self._loop_colision_comida()
+        self._loop_mensaje_random()
+
+        self.root.mainloop()
+
+    # ─────────────────────────────────────────
+    def _setup_imagenes(self):
+        size   = CONFIG["pet_size"]
+        img_sz = CONFIG["pet_img_size"]
+        cx, cy = size // 2, size // 2
+
+        for estado, paths in IMAGENES.items():
+            self._tk_images[estado] = []
+            for p in paths:
+                img = cargar_imagen(p, img_sz)
+                if img:
+                    self._tk_images[estado].append(img)
+
+        if self._tk_images.get(self.NORMAL):
+            img_inicial = self._tk_images[self.NORMAL][0]
+            self.pet_img_item = self.canvas.create_image(
+                cx, cy, image=img_inicial, anchor="center")
+        else:
+            self.pet_text_item = self.canvas.create_text(
+                cx, cy, text=EMOJIS_ESTADO[self.NORMAL],
+                font=("Arial", 38))
+
+    def _usar_imagenes(self):
+        return any(len(imgs) > 0 for imgs in self._tk_images.values())
+
+    # ─────────────────────────────────────────
+    def _drag_start(self, e):
+        self._drag_offset = (e.x, e.y)
+
+    def _drag_motion(self, e):
+        nx = self.win.winfo_x() + e.x - self._drag_offset[0]
+        ny = self.win.winfo_y() + e.y - self._drag_offset[1]
+        self.x = float(nx)
+        self.y = float(ny)
+        self.base_y = self.y
+        self._posicionar()
+
+    def _cerrar(self, event=None):
+   
+        try:
+        # Destruir comidas
+            for comida in self.comidas:
+                comida.destroy()
+
+        # Destruir globo de diálogo
+            self.globo.ocultar()
+
+        # Destruir ventana mascota
+            self.win.destroy()
+
+        # Cerrar aplicación
+            self.root.quit()
+            self.root.destroy()
+
+        except Exception as e:
+            print("Error al cerrar:", e)
+
+    def _posicionar(self):
+        self.win.geometry(f"+{int(self.x)}+{int(self.y)}")
+
+    def _centro_pantalla(self):
+        s = CONFIG["pet_size"]
+        return int(self.x + s // 2), int(self.y + s // 2)
+
+    # ─────────────────────────────────────────
+    def _loop_movimiento(self):
+        sw   = self.root.winfo_screenwidth()
+        sh   = self.root.winfo_screenheight()
+        size = CONFIG["pet_size"]
+
+        self.dir_timer += 1
+        if self.dir_timer >= CONFIG["nueva_dir_intervalo"]:
+            self.dir_timer = 0
+            self.vx = random.uniform(-2.5, 2.5)
+            if random.random() < 0.15:
+                self.vx = 0.0
+
+        if self.x <= 0 or self.x >= sw - size:
+            self.vx *= -1
+        self.base_y = max(30.0, min(self.base_y, float(sh - size - 50)))
+
+        self.x += self.vx
+        self.x  = max(0.0, min(self.x, float(sw - size)))
+
+        self.salto_phase += CONFIG["salto_velocidad"]
+        self.y = self.base_y - abs(math.sin(self.salto_phase)) * CONFIG["salto_altura"]
+
+        self._posicionar()
+        self._actualizar_apariencia()
+
+        cx, cy = self._centro_pantalla()
+        self.globo.mover(cx, int(self.y))
+
+        self.root.after(CONFIG["move_intervalo"], self._loop_movimiento)
+
+    def _actualizar_apariencia(self):
+        if self._usar_imagenes():
+            imgs = self._tk_images.get(self.estado, self._tk_images.get(self.NORMAL))
+            if imgs and self.pet_img_item:
+                # Si está saltando (fase alta del seno), usar imagen de salto si existe
+                idx = 1 if len(imgs) > 1 and abs(math.sin(self.salto_phase)) > 0.5 else 0
+                self.canvas.itemconfig(self.pet_img_item, image=imgs[idx])
+        else:
+            if self.pet_text_item:
+                self.canvas.itemconfig(self.pet_text_item,
+                                       text=EMOJIS_ESTADO.get(self.estado, "🐱"))
+
+    # ─────────────────────────────────────────
+    def _loop_hambre(self):
+        self.hambre = min(CONFIG["hambre_max"],
+                          self.hambre + CONFIG["hambre_velocidad"])
+
+        if self.hambre >= CONFIG["hambre_grito"]:
+            nuevo = self.GRITANDO
+        elif self.hambre >= CONFIG["hambre_grito"] * 0.7:
+            nuevo = self.HAMBRE
+        elif self.estado != self.FELIZ:
+            nuevo = self.NORMAL
+        else:
+            nuevo = self.estado
+
+        if self.estado == self.FELIZ and self.hambre > 5:
+            nuevo = self.NORMAL
+
+        # Globo al cambiar a estado de hambre
+        if nuevo != self._ultimo_estado and nuevo in (self.HAMBRE, self.GRITANDO):
+            msgs = {
+                self.HAMBRE:   ["Tengo hambre... 😿", "¿Dónde está mi comida?",
+                                "Mi estómago gruñe..."],
+                self.GRITANDO: ["¡¡TENGO HAMBREEE!!", "¡¡ALIMÉNTAME YA!!",
+                                "¡¡SOY DRAMÁTICO POR HAMBRE!!"],
+            }
+            cx, cy = self._centro_pantalla()
+            self.globo.mostrar(random.choice(msgs[nuevo]), cx, int(self.y))
+
+        self._ultimo_estado = nuevo
+        self.estado = nuevo
+        self.root.after(200, self._loop_hambre)
+
+    # ─────────────────────────────────────────
+    def _loop_comida(self):
+        if len(self.comidas) < CONFIG["comida_max"]:
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            x = random.randint(50, sw - 100)
+            y = random.randint(50, sh - 100)
+            self.comidas.append(
+                Comida(self.root, random.choice(COMIDAS), x, y, self._on_eaten))
+        self.root.after(CONFIG["comida_intervalo"], self._loop_comida)
+
+    def _on_eaten(self, comida):
+        self.hambre = max(0.0, self.hambre - 40)
+        self.estado = self.FELIZ
+        self._ultimo_estado = self.FELIZ
+        if comida in self.comidas:
+            self.comidas.remove(comida)
+        comida.destroy()
+        msgs = ["¡Ñam ñam! 😋", "¡Delicioso!", "¡Gracias!",
+                "¡Más, más! 🥰", "¡Eres el mejor!"]
+        cx, cy = self._centro_pantalla()
+        self.globo.mostrar(random.choice(msgs), cx, int(self.y))
+
+    # ─────────────────────────────────────────
+    def _loop_colision_comida(self):
+        px, py = self._centro_pantalla()
+        for comida in list(self.comidas):
+            try:
+                cx, cy = comida.get_center()
+                dist = math.hypot(px - cx, py - cy)
+                if comida._being_dragged and dist < 55:
+                    self._on_eaten(comida); break
+                elif not comida._being_dragged and dist < 40:
+                    self._on_eaten(comida); break
+            except Exception:
+                if comida in self.comidas:
+                    self.comidas.remove(comida)
+        self.root.after(100, self._loop_colision_comida)
+
+    # ─────────────────────────────────────────
+    def _loop_mensaje_random(self):
+        if self.estado == self.NORMAL and MENSAJES_RANDOM:
+            cx, cy = self._centro_pantalla()
+            self.globo.mostrar(random.choice(MENSAJES_RANDOM), cx, int(self.y))
+        siguiente = random.randint(MENSAJE_INTERVALO_MIN, MENSAJE_INTERVALO_MAX)
+        self.root.after(siguiente, self._loop_mensaje_random)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  PUNTO DE ENTRADA
+# ══════════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    print("🐾 Mascota de Escritorio v2")
+    print("━" * 40)
+    print("  • Se mueve y salta por tu pantalla")
+    print("  • Aparece comida cada ~8 seg → arrástrala a la mascota")
+    print("  • Sin comida → empieza a gritar")
+    print("  • Mensajes aleatorios cada 15–35 seg")
+    print()
+    if PIL_DISPONIBLE:
+        print("  ✓ Pillow disponible — puedes usar imágenes PNG")
+        print("    Edita IMAGENES{} al inicio del archivo")
+    else:
+        print("  ✗ Pillow no instalado → usando emojis")
+        print("    Para usar PNG:  pip install pillow")
+    print()
+    print("  Edita MENSAJES_RANDOM[] para personalizar los mensajes")
+    print("━" * 40 + "\n")
+    Mascota()
