@@ -119,12 +119,12 @@ CONFIG = {
     "hambre_velocidad":    0.05,
     "hambre_grito":        60,
     "comida_intervalo":    13_000,
-    "comida_max":          6,
+    "comida_max":          3,
     "salto_altura":        18,
     "salto_velocidad":     0.15,
     "move_intervalo":      40,
     "nueva_dir_intervalo": 120,
-    "pet_size":            90,
+    "pet_size":            140,
     "pet_img_size":        80,
     "comida_size":         40,
 }
@@ -404,22 +404,38 @@ class Mascota:
         self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
 
     def ia_pensar(self):
-        """Genera un pensamiento usando Ollama basado en el contexto."""
+        """Genera un pensamiento usando Ollama con restricciones estrictas."""
         if not IA_DISPONIBLE:
             return random.choice(MENSAJES_RANDOM)
         
-        ctx = ", ".join(self.contexto_apps) if self.contexto_apps else "nada especial"
-        prompt = (f"Eres Dewey, una mascota virtual traviesa en el escritorio del usuario. "
-                  f"El usuario tiene estas apps abiertas: {ctx}. "
-                  f"Genera un pensamiento o comentario MUY CORTO (máximo 10 palabras) sobre lo que hace el usuario o sobre ti. "
-                  f"Sé gracioso, sarcástico o curioso. No uses emojis de gatos, usa otros si quieres.")
+        # Filtrar apps para que no parezca una lista técnica
+        ctx = ", ".join(self.contexto_apps) if self.contexto_apps else "nada"
+        
+        # Prompt más directo y con restricciones de formato
+        system_rules = (
+            "Eres Dewey, una mascota virtual sarcástica y perezosa. "
+            "REGLA DE ORO: Responde ÚNICAMENTE en español. "
+            "REGLA 2: Máximo 6 palabras. "
+            "REGLA 3: No menciones nombres de archivos o apps directamente. "
+            "REGLA 4: No saludes ni des explicaciones. Solo el pensamiento."
+        )
+        
+        user_prompt = f"Contexto de apps: {ctx}. Di algo corto y gracioso sobre lo que hago o sobre tu pereza."
         
         try:
             res = ollama.chat(model='tinyllama', messages=[
-                {'role': 'system', 'content': 'Eres Dewey. Comentarios ultra cortos y sarcásticos en español.'},
-                {'role': 'user', 'content': prompt}
+                {'role': 'system', 'content': system_rules},
+                {'role': 'user', 'content': user_prompt}
             ])
-            return res['message']['content'].strip().replace('"', '')
+            
+            pensamiento = res['message']['content'].strip().split('\n')[0] # Solo la primera línea
+            pensamiento = pensamiento.replace('"', '').replace('Dewey:', '').strip()
+            
+            # Si la IA se queda callada o falla la restricción, usar fallback
+            if not pensamiento or len(pensamiento.split()) > 10:
+                return random.choice(MENSAJES_RANDOM)
+                
+            return pensamiento
         except:
             return random.choice(MENSAJES_RANDOM)
 
