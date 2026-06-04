@@ -284,9 +284,12 @@ class Comida:
         if self._appear_scale < 1.0:
             self._appear_scale = min(1.0, self._appear_scale + 0.1)
             s = max(1, int(CONFIG["comida_size"] * self._appear_scale))
-            self.canvas.config(width=s, height=s)
-            self.canvas.coords(self.label, s // 2, s // 2)
-            self.root.after(20, self._animate_appear)
+            try:
+                self.canvas.config(width=s, height=s)
+                self.canvas.coords(self.label, s // 2, s // 2)
+                self.root.after(20, self._animate_appear)
+            except (tk.TclError, AttributeError):
+                pass
 
     def _drag_start(self, e):
         self._drag_offset = (e.x, e.y)
@@ -422,7 +425,14 @@ class Mascota:
         )
         
         try:
-            res = ollama.generate(model='tinyllama', prompt=prompt, stop=["\n", "Dewey:"], options={"num_predict": 20})
+            res = ollama.generate(
+                model='tinyllama', 
+                prompt=prompt, 
+                options={
+                    "num_predict": 25, 
+                    "stop": ["\n", "Dewey:", "Usuario:"]
+                }
+            )
             pensamiento = res['response'].strip().replace('"', '')
             
             # Debug en consola para ver qué está pensando realmente
