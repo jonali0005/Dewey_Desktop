@@ -384,24 +384,33 @@ class Mascota:
         self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
 
     def ia_pensar(self):
-        """Genera un pensamiento con la personalidad curiosa, graciosa y consejera de Dewey."""
+        """Genera un pensamiento que une apps abiertas y estado emocional."""
         if not IA_DISPONIBLE:
             return random.choice(MENSAJES_RANDOM)
         
         ctx = ", ".join(self.contexto_apps) if self.contexto_apps else "el escritorio"
         
-        # Prompt que define la nueva personalidad: Curioso, Divertido y Consejero
+        # Diccionario de tonos según emoción (fácil de ampliar)
+        MODOS_IA = {
+            self.NORMAL:   "curioso y bromista",
+            self.FELIZ:    "muy alegre, tierno y saltarín",
+            self.HAMBRE:   "un poco quejica y distraído por comida",
+            self.GRITANDO: "muy dramático, sarcástico y hambriento",
+            # Añadir más emociones aquí en el futuro
+        }
+        
+        tono = MODOS_IA.get(self.estado, "normal")
+        
         prompt = (
-            "Eres Dewey, una mascota de escritorio que ama dar saltitos. "
-            "Personalidad: Curioso, gracioso, divertido y MUY CONSEJERO. "
-            "REGLAS: Responde en ESPAÑOL, máximo 8 palabras, sé tierno pero bromista. "
+            f"Eres Dewey, una mascota virtual. Tu humor actual es: {tono}. "
+            "Responde de forma natural, NO digas 'Dewey:', NO digas 'Contexto:'. "
+            "Habla como una mascota real, no como una lista de programas. "
+            "REGLAS: Español, máximo 8 palabras, evita sonar como un robot. "
             "Ejemplos:\n"
-            "Contexto: Navegador. Dewey: ¡Cuántas pestañas! ¿Y si descansamos un poco?\n"
-            "Contexto: Código. Dewey: ¡Ese bug no se quitará saltando! Revisa la línea 10.\n"
-            "Contexto: Nada. Dewey: ¡Mira mis saltos! Deberías estirarte tú también.\n"
-            "Contexto: Música. Dewey: ¡Qué buen ritmo! ¡Baila conmigo!\n"
-            f"Ahora el usuario usa: {ctx}. "
-            "Dewey dice:"
+            "Humor: Alegre. Contexto: Código. Dewey: ¡Qué bien escribes! ¡Te doy un saltito!\n"
+            "Humor: Hambriento. Contexto: Web. Dewey: Menos internet y más galletas para mí.\n"
+            f"Ahora tu humor es {tono} y el usuario usa: {ctx}. "
+            "¿Qué piensas?"
         )
         
         try:
@@ -410,13 +419,16 @@ class Mascota:
                 prompt=prompt, 
                 options={
                     "num_predict": 30, 
+                    "temperature": 0.8, # Más creatividad para que sea menos robótico
                     "stop": ["\n", "Dewey:", "Usuario:", "Contexto:"]
                 }
             )
             pensamiento = res['response'].strip().replace('"', '')
             
-            # Debug en consola
-            print(f"🧠 Dewey Curioso piensa: {pensamiento}")
+            # Limpieza extra para evitar eco de instrucciones
+            if ":" in pensamiento: pensamiento = pensamiento.split(":")[-1].strip()
+            
+            print(f"🧠 Dewey ({self.estado}) piensa: {pensamiento}")
             
             if not pensamiento or len(pensamiento.split()) > 15:
                 return random.choice(MENSAJES_RANDOM)
