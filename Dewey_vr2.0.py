@@ -74,39 +74,16 @@ IMAGENES = {
 # ── Mensajes personalizados aleatorios ────────────────────────────
 # Aparecen de vez en cuando en globo de diálogo.
 MENSAJES_RANDOM = [
-    # Curiosos / filosóficos
-    "¿Habrá vida en Marte?",
     "Pienso... luego salto.",
-    "¿Y si el universo es un sueño?",
-    "El tiempo es relativo. El hambre, no.",
-
-    # Cotidianos
-    "¿Cuándo es la cena?",
-    "Hoy me siento aventurero 🗺️",
-    "Necesito un abrazo.",
-    "Lunes... otra vez.",
+    "El hambre no es relativa.",
     "¿Ya es viernes?",
-
-    # Graciosos
-    "Toco el suelo con los pies, pero soñar es gratis.",
-    "En mis tiempos esto no pasaba.",
-    "¡Inserte comida para continuar!",
-    "Error 404: comida no encontrada.",
-    "Loading... cargando carisma...",
-
-    # Motivacionales
-    "¡Tú puedes! (yo también, pero con comida).",
-    "Cada salto es un nuevo comienzo.",
-    "Sigue adelante, pequeño humano.",
-    "Eso brad",
-
-    # Agrega los tuyos aquí ↓
+    "¡Inserte comida!",
 ]
 
 # ── Frecuencia de mensajes random ─────────────────────────────────
-MENSAJE_INTERVALO_MIN = 15_000   # ms mínimo entre mensajes (15 seg)
-MENSAJE_INTERVALO_MAX = 30_000   # ms máximo entre mensajes (35 seg)
-MENSAJE_DURACION      = 7_000    # ms que permanece visible el mensaje
+MENSAJE_INTERVALO_MIN = 8_000    # ms mínimo entre mensajes (8 seg)
+MENSAJE_INTERVALO_MAX = 15_000   # ms máximo entre mensajes (15 seg)
+MENSAJE_DURACION      = 6_000    # ms que permanece visible el mensaje
 
 # ── Comidas disponibles ────────────────────────────────────────────
 COMIDAS = ["🍎", "🍕", "🍩", "🐟", "🍌", "🧀", "🍗", "🍓"]
