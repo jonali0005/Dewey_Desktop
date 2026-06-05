@@ -424,33 +424,51 @@ class Mascota:
         self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
 
     def ia_pensar(self, contexto_especial=None):
-        """Genera un pensamiento que une apps, humor, eventos y MEMORIA de hábitos."""
+        """Genera un pensamiento con la personalidad definitiva de Dewey."""
         if not IA_DISPONIBLE:
             return "..."
         
-        ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "el escritorio"
+        ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "nada especial"
         habitos = obtener_resumen_habitos()
         
-        MODOS_IA = {
-            self.NORMAL:   "curioso y bromista",
-            self.FELIZ:    "muy alegre, agradecido y saltarín",
-            self.HAMBRE:   "un poco quejica y distraído por comida",
-            self.GRITANDO: "muy dramático, sarcástico y hambriento",
+        # Mapeo extendido de emociones solicitado por el usuario
+        DESC_EMOCIONES = {
+            "FELIZ":       "Alegre y optimista, celebra logros.",
+            "EMOCIONADO":  "Mucha energía y exclamaciones.",
+            "CURIOSO":     "Hace preguntas sobre lo que ve.",
+            "SORPRENDIDO": "Reacciona de forma expresiva.",
+            "ORGULLOSO":   "Felicita al usuario.",
+            "JUGUETON":    "Hace bromas y comentarios divertidos.",
+            "CONCENTRADO": "Habla poco, observa con atención.",
+            "PREOCUPADO":  "Quiere ayudar con los errores.",
+            "ABURRIDO":    "Busca interacción interesante.",
+            "SOMNOLIENTO": "Tranquilo y calmado.",
+            "CONFUNDIDO":  "Busca aclaraciones, se perdió.",
+            "HAMBRE":      "Dramático y sarcástico por comida.",
         }
+
+        # Determinar emoción actual para la IA (puedes ampliar la lógica de estados luego)
+        emocion_ia = "CURIOSO" 
+        if self.estado == self.FELIZ: emocion_ia = "FELIZ"
+        if self.estado in (self.HAMBRE, self.GRITANDO): emocion_ia = "HAMBRE"
         
-        tono = MODOS_IA.get(self.estado, "normal")
-        
+        instrucciones_identidad = (
+            "Tu nombre es Dewey. Eres una criatura digital curiosa, inteligente y juguetona. "
+            "No eres una IA corporativa. Eres una MASCOTA VIVA que acompaña al usuario. "
+            "Tu estilo: Natural, espontáneo, ultra corto (máximo 12 palabras), expresivo. "
+            "Usa ocasionalmente: ¡Oh!, Jeje, Hmm..., ¡Qué interesante! "
+            "REGLAS: Español, habla sobre lo que ocurre en pantalla, da consejos útiles pero divertidos. "
+            "NUNCA digas 'Como modelo de lenguaje'."
+        )
+
         if contexto_especial:
-            user_prompt = f"EVENTO: {contexto_especial}. Humor: {tono}. Apps: {ctx_apps}."
+            user_prompt = f"EVENTO: {contexto_especial}. Humor: {emocion_ia}. Apps: {ctx_apps}."
         else:
-            user_prompt = f"Humor: {tono}. Apps hoy: {ctx_apps}. Memoria de hábitos: {habitos}."
+            user_prompt = f"Humor: {emocion_ia} ({DESC_EMOCIONES.get(emocion_ia)}). Apps ahora: {ctx_apps}. Memoria: {habitos}."
 
         prompt = (
-            f"Eres Dewey, mascota virtual con memoria. Humor: {tono}. "
-            "Habla de forma natural (máximo 12 palabras) en ESPAÑOL. "
-            "Usa tu memoria de hábitos para comentar algo. "
-            "REGLA: SOLO responde con el pensamiento. "
-            f"Contexto: {user_prompt}\n"
+            f"{instrucciones_identidad}\n"
+            f"Contexto actual: {user_prompt}\n"
             "Dewey dice:"
         )
         
@@ -459,18 +477,18 @@ class Mascota:
                 model='tinyllama', 
                 prompt=prompt, 
                 options={
-                    "num_predict": 40, 
-                    "temperature": 0.8,
-                    "stop": ["\n", "Dewey:", "Usuario:", "Evento:"]
+                    "num_predict": 45, 
+                    "temperature": 0.9,
+                    "stop": ["\n", "Dewey:", "Usuario:", "Contexto:", "Evento:"]
                 }
             )
             pensamiento = res['response'].strip().replace('"', '')
             if ":" in pensamiento: pensamiento = pensamiento.split(":")[-1].strip()
             
-            print(f"🧠 Dewey ({self.estado}) piensa con memoria: {pensamiento}")
-            return pensamiento if pensamiento else "..."
+            print(f"🧠 Dewey [{emocion_ia}] dice: {pensamiento}")
+            return pensamiento if pensamiento else "¡Hola!"
         except:
-            return "¡Hola!"
+            return "¡Oh! ¿Qué estamos haciendo?"
 
     # ─────────────────────────────────────────
     def _setup_imagenes(self):
