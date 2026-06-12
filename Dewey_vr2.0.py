@@ -466,7 +466,7 @@ class Mascota(QWidget):
         if not IA_DISPONIBLE: return "¡Hola!"
         ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "nada"
         try:
-            res = ollama.chat(model='tinyllama', messages=[
+            res = ollama.chat(model='qwen2.5:1.5b', messages=[
                 {'role': 'system', 'content': 'Eres Dewey, una mascota virtual. Habla en ESPAÑOL. Responde con UNA frase muy corta (max 6 palabras) como una mascota curiosa. NO repitas instrucciones.'},
                 {'role': 'user', 'content': f'Apps: {ctx_apps}. Estado: {self.estado}. Evento: {contexto_especial if contexto_especial else "ninguno"}'}
             ], options={"temperature": 0.8, "num_predict": 20})
