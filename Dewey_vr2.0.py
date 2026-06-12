@@ -1,24 +1,20 @@
 """
-🐾 Dewey_vr2.0
+🐾 Dewey_vr3.0 — PySide6 Edition
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Una mascota virtual que vive en tu escritorio.
-Soporta imágenes PNG personalizadas y mensajes aleatorios.
-
-Requisitos:
-  pip install pillow
-
-Ejecutar:
-  python Dewey_vr2.0.py
+Migración completa de tkinter a PySide6.
 """
 
-import tkinter as tk
+import sys
 import random
 import math
 import os
-
-import sys
 import threading
 import sqlite3
+
+from PySide6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
+from PySide6.QtCore import Qt, QTimer, QPoint, QSize, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QPixmap, QPainter, QColor, QFont, QPolygon, QPen, QBrush
 
 # Intentar importar librerías para la IA
 try:
@@ -86,28 +82,11 @@ def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
-        #base_path = os.path.abspath(".")
         base_path = os.path.dirname(os.path.abspath(__file__))
 
     return os.path.join(base_path, relative_path)
 
-
-# Pillow es obligatorio para usar imágenes PNG
-try:
-    from PIL import Image, ImageTk
-except ImportError:
-    print("❌ Error: Pillow no encontrado. Es obligatorio para esta versión.")
-    print("   Instálalo con: pip install pillow\n")
-    sys.exit(1)
-
-
-# ══════════════════════════════════════════════════════════════════
-#  🎨  PERSONALIZACIÓN  ← Edita aquí todo lo que quieras cambiar
-# ══════════════════════════════════════════════════════════════════
-
 # ── Imágenes de la mascota por estado ─────────────────────────────
-# Pon la ruta a tus PNG sin fondo.
-# Formato: [Imagen_Normal, Imagen_Salto]
 IMAGENES = {
     "normal":   [resource_path("imagenes/Dewey-Base.png"), resource_path("imagenes/Dewey-Jump.png")],
     "feliz":    [resource_path("imagenes/Dewey-Happy.png"), resource_path("imagenes/Dewey-Happy-Jump.png")],
@@ -116,16 +95,14 @@ IMAGENES = {
 }
 
 # ── Frecuencia de mensajes random ─────────────────────────────────
-MENSAJE_INTERVALO_MIN = 8_000    # ms mínimo entre mensajes (8 seg)
-MENSAJE_INTERVALO_MAX = 15_000   # ms máximo entre mensajes (15 seg)
-MENSAJE_DURACION      = 6_000    # ms que permanece visible el mensaje
+MENSAJE_INTERVALO_MIN = 8_000
+MENSAJE_INTERVALO_MAX = 15_000
+MENSAJE_DURACION      = 6_000
 
 # ── Comidas disponibles ────────────────────────────────────────────
 COMIDAS = ["🍎", "🍕", "🍩", "🐟", "🍌", "🧀", "🍗", "🍓"]
 
-# ══════════════════════════════════════════════════════════════════
-#  ⚙️  CONFIGURACIÓN TÉCNICA
-# ══════════════════════════════════════════════════════════════════
+# ── CONFIGURACIÓN TÉCNICA ──────────────────────────────────────────
 CONFIG = {
     "hambre_max":          100,
     "hambre_velocidad":    0.05,
@@ -143,225 +120,158 @@ CONFIG = {
 
 
 # ══════════════════════════════════════════════════════════════════
-#  UTILIDADES
+#  GLOBO DE DIÁLOGO (PySide6)
 # ══════════════════════════════════════════════════════════════════
-def cargar_imagen(path: str, size: int):
-    """
-    Carga un PNG con transparencia y lo convierte a PhotoImage.
-    """
-    if not path:
-        return None
-    ruta = os.path.abspath(path)
-    if not os.path.isfile(ruta):
-        print(f"⚠  Imagen no encontrada: {ruta}")
-        return None
-    try:
-        img = Image.open(ruta).convert("RGBA")
-        img = img.resize((size, size), Image.NEAREST)
-        return ImageTk.PhotoImage(img)
-    except Exception as e:
-        print(f"⚠  Error cargando imagen '{ruta}': {e}")
-        return None
-
-
-# ══════════════════════════════════════════════════════════════════
-#  GLOBO DE DIÁLOGO
-# ══════════════════════════════════════════════════════════════════
-class GloboDialogo:
-    """Ventana flotante que muestra un mensaje encima de la mascota."""
-
-    def __init__(self, root):
-        self.root = root
-        self.win = None
-        self._ocultar_id = None
+class GloboDialogo(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        self.texto = ""
+        self.timer_ocultar = QTimer()
+        self.timer_ocultar.timeout.connect(self.hide)
+        
+        self.label = QLabel(self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("color: #222222; background: transparent; padding: 10px;")
+        self.label.setFont(QFont("Segoe UI", 10))
+        self.label.setWordWrap(True)
 
     def mostrar(self, texto: str, x: int, y: int):
-        self._cancelar_ocultar()
-        if self.win:
-            try:
-                self.win.destroy()
-            except Exception:
-                pass
-
-        self.win = tk.Toplevel(self.root)
-        self.win.overrideredirect(True)
-        self.win.attributes("-topmost", True)
-        self.win.config(bg="white")
-        try:
-            self.win.attributes("-transparentcolor", "white")
-        except Exception:
-            pass
-
-        c = tk.Canvas(self.win, bg="white", highlightthickness=0)
-        c.pack()
-
-        PADDING = 12
-        MAX_W   = 220
-        # Medir texto
-        lbl = tk.Label(self.root, text=texto, font=("Segoe UI", 10),
-                       wraplength=MAX_W - PADDING * 2)
-        lbl.update_idletasks()
-        tw = min(lbl.winfo_reqwidth() + PADDING * 2, MAX_W)
-        th = lbl.winfo_reqheight() + PADDING * 2 + 10
-        lbl.destroy()
-
-        self._dibujar_burbuja(c, tw, th)
-        c.config(width=tw, height=th)
-        c.create_text(tw // 2, (th - 10) // 2, text=texto,
-                      font=("Segoe UI", 10), fill="#222222",
-                      width=tw - PADDING * 2, justify="center")
-
+        self.texto = texto
+        self.label.setText(texto)
+        
+        # Calcular tamaño
+        padding = 24
+        max_w = 220
+        metrics = self.label.fontMetrics()
+        rect = metrics.boundingRect(0, 0, max_w - padding, 1000, Qt.AlignCenter | Qt.TextWordWrap, texto)
+        
+        tw = min(rect.width() + padding, max_w)
+        th = rect.height() + padding + 15
+        
+        self.resize(tw, th)
+        self.label.setGeometry(0, 0, tw, th - 10)
+        
         bx = x - tw // 2
         by = y - th - 4
-        self.win.geometry(f"+{bx}+{by}")
-        self._ocultar_id = self.root.after(MENSAJE_DURACION, self.ocultar)
+        self.move(bx, by)
+        self.show()
+        
+        self.timer_ocultar.start(MENSAJE_DURACION)
 
-    def _dibujar_burbuja(self, c, w, h):
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        w, h = self.width(), self.height()
         cola_w, cola_h = 12, 10
         bh = h - cola_h
-        puntos = [
-            12, 0,  w - 12, 0,
-            w,  12, w, bh - 12,
-            w,  bh, w // 2 + cola_w, bh,
-            w // 2, h,
-            w // 2 - cola_w, bh,
-            0, bh,  0, 12,
+        
+        # Dibujar burbuja
+        path = [
+            QPoint(12, 0), QPoint(w - 12, 0),
+            QPoint(w, 12), QPoint(w, bh - 12),
+            QPoint(w, bh), QPoint(w // 2 + cola_w, bh),
+            QPoint(w // 2, h),
+            QPoint(w // 2 - cola_w, bh),
+            QPoint(0, bh), QPoint(0, 12)
         ]
-        c.create_polygon(puntos, fill="#FFFDE7", outline="#BDBDBD",
-                         smooth=False, width=1.5)
-
-    def ocultar(self):
-        self._cancelar_ocultar()
-        if self.win:
-            try:
-                self.win.destroy()
-            except Exception:
-                pass
-            self.win = None
-
-    def _cancelar_ocultar(self):
-        if self._ocultar_id:
-            try:
-                self.root.after_cancel(self._ocultar_id)
-            except Exception:
-                pass
-            self._ocultar_id = None
+        
+        poly = QPolygon(path)
+        painter.setBrush(QBrush(QColor("#FFFDE7")))
+        painter.setPen(QPen(QColor("#BDBDBD"), 1.5))
+        painter.drawPolygon(poly)
 
     def mover(self, x: int, y: int):
-        if self.win:
-            try:
-                tw = self.win.winfo_width()
-                th = self.win.winfo_height()
-                self.win.geometry(f"+{x - tw // 2}+{y - th - 4}")
-            except Exception:
-                pass
+        if self.isVisible():
+            bx = x - self.width() // 2
+            by = y - self.height() - 4
+            self.move(bx, by)
 
 
 # ══════════════════════════════════════════════════════════════════
-#  CLASE: COMIDA
+#  CLASE: COMIDA (PySide6)
 # ══════════════════════════════════════════════════════════════════
-class Comida:
-    def __init__(self, root, emoji, x, y, on_eaten):
-        self.root = root
+class Comida(QWidget):
+    eaten = Signal(object)
+
+    def __init__(self, emoji, x, y):
+        super().__init__()
         self.emoji = emoji
-        self.on_eaten = on_eaten
-        self._drag_offset = (0, 0)
-        self._being_dragged = False
-
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
         size = CONFIG["comida_size"]
-        self.win = tk.Toplevel(root)
-        self.win.overrideredirect(True)
-        self.win.attributes("-topmost", True)
-        self.win.config(bg="white")
-        try:
-            self.win.attributes("-transparentcolor", "white")
-        except Exception:
-            pass
+        self.resize(size, size)
+        self.move(x, y)
+        
+        self.label = QLabel(emoji, self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setFont(QFont("Arial", 22))
+        self.label.setGeometry(0, 0, size, size)
+        
+        self._drag_pos = None
+        self.being_dragged = False
+        
+        # Animación aparecer
+        self.setWindowOpacity(0)
+        self.anim = QPropertyAnimation(self, b"windowOpacity")
+        self.anim.setDuration(300)
+        self.anim.setStartValue(0)
+        self.anim.setEndValue(1)
+        self.anim.start()
+        
+        self.show()
 
-        self.canvas = tk.Canvas(self.win, width=size, height=size,
-                                bg="white", highlightthickness=0)
-        self.canvas.pack()
-        self.label = self.canvas.create_text(size // 2, size // 2,
-                                             text=emoji, font=("Arial", 22))
-        self.win.geometry(f"{size}x{size}+{x}+{y}")
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+            self.being_dragged = True
+            event.accept()
 
-        self.canvas.bind("<ButtonPress-1>",   self._drag_start)
-        self.canvas.bind("<B1-Motion>",       self._drag_motion)
-        self.canvas.bind("<ButtonRelease-1>", self._drag_end)
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.LeftButton and self._drag_pos:
+            self.move(event.globalPos() - self._drag_pos)
+            event.accept()
 
-        self._appear_scale = 0.3
-        self._animate_appear()
-
-    def _animate_appear(self):
-        if self._appear_scale < 1.0:
-            self._appear_scale = min(1.0, self._appear_scale + 0.1)
-            s = max(1, int(CONFIG["comida_size"] * self._appear_scale))
-            try:
-                self.canvas.config(width=s, height=s)
-                self.canvas.coords(self.label, s // 2, s // 2)
-                self.root.after(20, self._animate_appear)
-            except (tk.TclError, AttributeError):
-                pass
-
-    def _drag_start(self, e):
-        self._drag_offset = (e.x, e.y)
-        self._being_dragged = True
-
-    def _drag_motion(self, e):
-        nx = self.win.winfo_x() + e.x - self._drag_offset[0]
-        ny = self.win.winfo_y() + e.y - self._drag_offset[1]
-        self.win.geometry(f"+{nx}+{ny}")
-
-    def _drag_end(self, e):
-        self._being_dragged = False
+    def mouseReleaseEvent(self, event):
+        self.being_dragged = False
 
     def get_center(self):
-        return (self.win.winfo_x() + CONFIG["comida_size"] // 2,
-                self.win.winfo_y() + CONFIG["comida_size"] // 2)
-
-    def destroy(self):
-        try:
-            self.win.destroy()
-        except Exception:
-            pass
+        return self.geometry().center()
 
 
 # ══════════════════════════════════════════════════════════════════
-#  CLASE: MASCOTA
+#  CLASE: MASCOTA (PySide6)
 # ══════════════════════════════════════════════════════════════════
-class Mascota:
+class Mascota(QWidget):
     NORMAL   = "normal"
     FELIZ    = "feliz"
     HAMBRE   = "hambre"
     GRITANDO = "gritando"
 
     def __init__(self):
+        super().__init__()
         iniciar_db()
-        self.root = tk.Tk()
-        self.root.withdraw()
-
+        
         # ── Ventana mascota ───────────────────────
-        self.win = tk.Toplevel(self.root)
-        self.win.overrideredirect(True)
-        self.win.attributes("-topmost", True)
-        self.win.config(bg="white")
-        try:
-            self.win.attributes("-transparentcolor", "white")
-        except Exception:
-            pass
-
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
         size = CONFIG["pet_size"]
-        self.canvas = tk.Canvas(self.win, width=size, height=size,
-                                bg="white", highlightthickness=0)
-        self.canvas.pack()
-
-        self.pet_img_item  = None
-        self.pet_text_item = None
-        self._tk_images    = {}
+        self.resize(size, size)
+        
+        self.pet_label = QLabel(self)
+        self.pet_label.setAlignment(Qt.AlignCenter)
+        self.pet_label.setGeometry(0, 0, size, size)
+        
+        self._pixmaps = {}
         self._setup_imagenes()
-
+        
         # ── Globo de diálogo ──────────────────────
-        self.globo = GloboDialogo(self.root)
+        self.globo = GloboDialogo()
 
         # ── Estado ───────────────────────────────
         self.hambre         = 0.0
@@ -370,8 +280,9 @@ class Mascota:
         self.contexto_apps  = []
 
         # ── Movimiento ────────────────────────────
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
+        screen = QApplication.primaryScreen().geometry()
+        sw, sh = screen.width(), screen.height()
+        
         self.x           = float(random.randint(100, sw - 200))
         self.y           = float(random.randint(100, sh - 200))
         self.vx          = random.choice([-1.5, 1.5])
@@ -383,180 +294,82 @@ class Mascota:
         self.comidas: list[Comida] = []
 
         # ── Drag mascota ──────────────────────────
-        self._drag_offset = (0, 0)
-        self.canvas.bind("<ButtonPress-1>", self._drag_start)
-        self.canvas.bind("<B1-Motion>",     self._drag_motion)
-        #self.canvas.bind("<Button-3>", self._cerrar)
-        self.canvas.bind("<Button-3>", self._cerrar)
-        self.win.bind("<Button-3>", self._cerrar)
-
-        # ── Arrancar loops ────────────────────────
-        self._posicionar()
-        self._loop_movimiento()
-        self._loop_hambre()
-        self._loop_comida()
-        self._loop_colision_comida()
-        self._loop_mensaje_random()
+        self._drag_pos = None
+        
+        # ── Timers ────────────────────────────────
+        self.timer_mov = QTimer()
+        self.timer_mov.timeout.connect(self._loop_movimiento)
+        self.timer_mov.start(CONFIG["move_intervalo"])
+        
+        self.timer_hambre = QTimer()
+        self.timer_hambre.timeout.connect(self._loop_hambre)
+        self.timer_hambre.start(200)
+        
+        self.timer_comida = QTimer()
+        self.timer_comida.timeout.connect(self._loop_comida)
+        self.timer_comida.start(CONFIG["comida_intervalo"])
+        
+        self.timer_colision = QTimer()
+        self.timer_colision.timeout.connect(self._loop_colision_comida)
+        self.timer_colision.start(100)
+        
+        self.timer_msg = QTimer()
+        self.timer_msg.timeout.connect(self._loop_mensaje_random)
+        self._programar_siguiente_mensaje()
+        
+        self.timer_contexto = QTimer()
+        self.timer_contexto.timeout.connect(self._loop_contexto_ia)
+        self.timer_contexto.start(60_000)
+        
+        self.move(int(self.x), int(self.y))
+        self.show()
+        
+        # Primera ejecución
         self._loop_contexto_ia()
 
-        self.root.mainloop()
-
-    # ─────────────────────────────────────────
-    def _loop_contexto_ia(self):
-        """Actualiza la lista de programas y guarda en la base de datos."""
-        if IA_DISPONIBLE:
-            def scan():
-                apps = set()
-                try:
-                    for proc in psutil.process_iter(['name']):
-                        name = proc.info['name'].lower()
-                        if name not in APPS_IGNORAR and not name.startswith("service"):
-                            apps.add(name.replace(".exe", "").capitalize())
-                    self.contexto_apps = list(apps)[:10]
-                    
-                    # Guardar hábito (la app principal)
-                    if self.contexto_apps:
-                        guardar_habito(self.contexto_apps[0], self.estado)
-                except: pass
-            
-            threading.Thread(target=scan, daemon=True).start()
-        
-        self.root.after(60_000, self._loop_contexto_ia) # Escanear cada minuto
-
-    def ia_pensar(self, contexto_especial=None):
-        """Genera un pensamiento con la personalidad definitiva de Dewey."""
-        if not IA_DISPONIBLE:
-            return "..."
-        
-        ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "nada especial"
-        habitos = obtener_resumen_habitos()
-        
-        # Mapeo extendido de emociones solicitado por el usuario
-        DESC_EMOCIONES = {
-            "FELIZ":       "Alegre y optimista, celebra logros.",
-            "EMOCIONADO":  "Mucha energía y exclamaciones.",
-            "CURIOSO":     "Hace preguntas sobre lo que ve.",
-            "SORPRENDIDO": "Reacciona de forma expresiva.",
-            "ORGULLOSO":   "Felicita al usuario.",
-            "JUGUETON":    "Hace bromas y comentarios divertidos.",
-            "CONCENTRADO": "Habla poco, observa con atención.",
-            "PREOCUPADO":  "Quiere ayudar con los errores.",
-            "ABURRIDO":    "Busca interacción interesante.",
-            "SOMNOLIENTO": "Tranquilo y calmado.",
-            "CONFUNDIDO":  "Busca aclaraciones, se perdió.",
-            "HAMBRE":      "Dramático y sarcástico por comida.",
-        }
-
-        # Determinar emoción actual para la IA (puedes ampliar la lógica de estados luego)
-        emocion_ia = "CURIOSO" 
-        if self.estado == self.FELIZ: emocion_ia = "FELIZ"
-        if self.estado in (self.HAMBRE, self.GRITANDO): emocion_ia = "HAMBRE"
-        
-        instrucciones_identidad = (
-            "Tu nombre es Dewey. Eres una criatura digital curiosa, inteligente y juguetona. "
-            "No eres una IA corporativa. Eres una MASCOTA VIVA que acompaña al usuario. "
-            "Tu estilo: Natural, espontáneo, ultra corto (máximo 12 palabras), expresivo. "
-            "Usa ocasionalmente: ¡Oh!, Jeje, Hmm..., ¡Qué interesante! "
-            "REGLAS: Español, habla sobre lo que ocurre en pantalla, da consejos útiles pero divertidos. "
-            "NUNCA digas 'Como modelo de lenguaje'."
-        )
-
-        if contexto_especial:
-            user_prompt = f"EVENTO: {contexto_especial}. Humor: {emocion_ia}. Apps: {ctx_apps}."
-        else:
-            user_prompt = f"Humor: {emocion_ia} ({DESC_EMOCIONES.get(emocion_ia)}). Apps ahora: {ctx_apps}. Memoria: {habitos}."
-
-        prompt = (
-            f"{instrucciones_identidad}\n"
-            f"Contexto actual: {user_prompt}\n"
-            "Dewey dice:"
-        )
-        
-        try:
-            res = ollama.generate(
-                model='tinyllama', 
-                prompt=prompt, 
-                options={
-                    "num_predict": 45, 
-                    "temperature": 0.9,
-                    "stop": ["\n", "Dewey:", "Usuario:", "Contexto:", "Evento:"]
-                }
-            )
-            pensamiento = res['response'].strip().replace('"', '')
-            if ":" in pensamiento: pensamiento = pensamiento.split(":")[-1].strip()
-            
-            print(f"🧠 Dewey [{emocion_ia}] dice: {pensamiento}")
-            return pensamiento if pensamiento else "¡Hola!"
-        except:
-            return "¡Oh! ¿Qué estamos haciendo?"
-
-    # ─────────────────────────────────────────
     def _setup_imagenes(self):
-        size   = CONFIG["pet_size"]
         img_sz = CONFIG["pet_img_size"]
-        cx, cy = size // 2, size // 2
-
         for estado, paths in IMAGENES.items():
-            self._tk_images[estado] = []
+            self._pixmaps[estado] = []
             for p in paths:
-                img = cargar_imagen(p, img_sz)
-                if img:
-                    self._tk_images[estado].append(img)
-
-        if self._tk_images.get(self.NORMAL):
-            img_inicial = self._tk_images[self.NORMAL][0]
-            self.pet_img_item = self.canvas.create_image(
-                cx, cy, image=img_inicial, anchor="center")
+                if os.path.exists(p):
+                    pix = QPixmap(p)
+                    if not pix.isNull():
+                        pix = pix.scaled(img_sz, img_sz, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        self._pixmaps[estado].append(pix)
+        
+        if self._pixmaps.get(self.NORMAL):
+            self.pet_label.setPixmap(self._pixmaps[self.NORMAL][0])
         else:
-            print("❌ Error: No se pudo cargar la imagen inicial (normal).")
+            print("❌ Error: No se pudo cargar la imagen inicial.")
             sys.exit(1)
 
-    def _usar_imagenes(self):
-        return any(len(imgs) > 0 for imgs in self._tk_images.values())
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+        elif event.button() == Qt.RightButton:
+            self._cerrar()
 
-    # ─────────────────────────────────────────
-    def _drag_start(self, e):
-        self._drag_offset = (e.x, e.y)
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.LeftButton and self._drag_pos:
+            new_pos = event.globalPos() - self._drag_pos
+            self.x = float(new_pos.x())
+            self.y = float(new_pos.y())
+            self.base_y = self.y
+            self.move(new_pos)
+            event.accept()
 
-    def _drag_motion(self, e):
-        nx = self.win.winfo_x() + e.x - self._drag_offset[0]
-        ny = self.win.winfo_y() + e.y - self._drag_offset[1]
-        self.x = float(nx)
-        self.y = float(ny)
-        self.base_y = self.y
-        self._posicionar()
+    def _cerrar(self):
+        for c in self.comidas:
+            c.close()
+        self.globo.close()
+        self.close()
+        QApplication.quit()
 
-    def _cerrar(self, event=None):
-   
-        try:
-        # Destruir comidas
-            for comida in self.comidas:
-                comida.destroy()
-
-        # Destruir globo de diálogo
-            self.globo.ocultar()
-
-        # Destruir ventana mascota
-            self.win.destroy()
-
-        # Cerrar aplicación
-            self.root.quit()
-            self.root.destroy()
-
-        except Exception as e:
-            print("Error al cerrar:", e)
-
-    def _posicionar(self):
-        self.win.geometry(f"+{int(self.x)}+{int(self.y)}")
-
-    def _centro_pantalla(self):
-        s = CONFIG["pet_size"]
-        return int(self.x + s // 2), int(self.y + s // 2)
-
-    # ─────────────────────────────────────────
     def _loop_movimiento(self):
-        sw   = self.root.winfo_screenwidth()
-        sh   = self.root.winfo_screenheight()
+        screen = QApplication.primaryScreen().geometry()
+        sw, sh = screen.width(), screen.height()
         size = CONFIG["pet_size"]
 
         self.dir_timer += 1
@@ -568,33 +381,28 @@ class Mascota:
 
         if self.x <= 0 or self.x >= sw - size:
             self.vx *= -1
+        
         self.base_y = max(30.0, min(self.base_y, float(sh - size - 50)))
-
         self.x += self.vx
         self.x  = max(0.0, min(self.x, float(sw - size)))
 
         self.salto_phase += CONFIG["salto_velocidad"]
         self.y = self.base_y - abs(math.sin(self.salto_phase)) * CONFIG["salto_altura"]
 
-        self._posicionar()
-        self._actualizar_apariencia()
+        self.move(int(self.x), int(self.y))
+        
+        # Actualizar apariencia
+        imgs = self._pixmaps.get(self.estado, self._pixmaps.get(self.NORMAL))
+        if imgs:
+            idx = 1 if len(imgs) > 1 and abs(math.sin(self.salto_phase)) > 0.5 else 0
+            self.pet_label.setPixmap(imgs[idx])
 
-        cx, cy = self._centro_pantalla()
+        # Mover globo
+        cx = int(self.x + size // 2)
         self.globo.mover(cx, int(self.y))
 
-        self.root.after(CONFIG["move_intervalo"], self._loop_movimiento)
-
-    def _actualizar_apariencia(self):
-        imgs = self._tk_images.get(self.estado, self._tk_images.get(self.NORMAL))
-        if imgs and self.pet_img_item:
-            # Si está saltando (fase alta del seno), usar imagen de salto si existe
-            idx = 1 if len(imgs) > 1 and abs(math.sin(self.salto_phase)) > 0.5 else 0
-            self.canvas.itemconfig(self.pet_img_item, image=imgs[idx])
-
-    # ─────────────────────────────────────────
     def _loop_hambre(self):
-        self.hambre = min(CONFIG["hambre_max"],
-                          self.hambre + CONFIG["hambre_velocidad"])
+        self.hambre = min(CONFIG["hambre_max"], self.hambre + CONFIG["hambre_velocidad"])
 
         if self.hambre >= CONFIG["hambre_grito"]:
             nuevo = self.GRITANDO
@@ -608,30 +416,23 @@ class Mascota:
         if self.estado == self.FELIZ and self.hambre > 5:
             nuevo = self.NORMAL
 
-        # Reacción IA al cambiar a estado de hambre
         if nuevo != self._ultimo_estado and nuevo in (self.HAMBRE, self.GRITANDO):
             def reaccionar_hambre():
                 ev = "Tengo mucha hambre" if nuevo == self.GRITANDO else "Empiezo a tener hambre"
                 texto = self.ia_pensar(contexto_especial=ev)
-                cx, cy = self._centro_pantalla()
-                self.root.after(0, lambda: self.globo.mostrar(texto, cx, int(self.y)))
-            
+                self._mostrar_mensaje_seguro(texto)
             threading.Thread(target=reaccionar_hambre, daemon=True).start()
 
         self._ultimo_estado = nuevo
         self.estado = nuevo
-        self.root.after(200, self._loop_hambre)
 
-    # ─────────────────────────────────────────
     def _loop_comida(self):
         if len(self.comidas) < CONFIG["comida_max"]:
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
+            screen = QApplication.primaryScreen().geometry()
+            sw, sh = screen.width(), screen.height()
             x = random.randint(50, sw - 100)
             y = random.randint(50, sh - 100)
-            self.comidas.append(
-                Comida(self.root, random.choice(COMIDAS), x, y, self._on_eaten))
-        self.root.after(CONFIG["comida_intervalo"], self._loop_comida)
+            self.comidas.append(Comida(random.choice(COMIDAS), x, y))
 
     def _on_eaten(self, comida):
         self.hambre = max(0.0, self.hambre - 40)
@@ -639,63 +440,90 @@ class Mascota:
         self._ultimo_estado = self.FELIZ
         if comida in self.comidas:
             self.comidas.remove(comida)
-        comida.destroy()
+        comida.close()
 
         def reaccionar_comida():
             texto = self.ia_pensar(contexto_especial="Acabo de comer algo delicioso")
-            cx, cy = self._centro_pantalla()
-            self.root.after(0, lambda: self.globo.mostrar(texto, cx, int(self.y)))
-        
+            self._mostrar_mensaje_seguro(texto)
         threading.Thread(target=reaccionar_comida, daemon=True).start()
 
-    # ─────────────────────────────────────────
     def _loop_colision_comida(self):
-        px, py = self._centro_pantalla()
+        px = self.x + CONFIG["pet_size"] // 2
+        py = self.y + CONFIG["pet_size"] // 2
+        
         for comida in list(self.comidas):
-            try:
-                cx, cy = comida.get_center()
-                dist = math.hypot(px - cx, py - cy)
-                if comida._being_dragged and dist < 55:
-                    self._on_eaten(comida); break
-                elif not comida._being_dragged and dist < 40:
-                    self._on_eaten(comida); break
-            except Exception:
-                if comida in self.comidas:
-                    self.comidas.remove(comida)
-        self.root.after(100, self._loop_colision_comida)
+            c_center = comida.get_center()
+            cx, cy = c_center.x(), c_center.y()
+            dist = math.hypot(px - cx, py - cy)
+            
+            if comida.being_dragged and dist < 55:
+                self._on_eaten(comida); break
+            elif not comida.being_dragged and dist < 40:
+                self._on_eaten(comida); break
 
-    # ─────────────────────────────────────────
     def _loop_mensaje_random(self):
         if self.estado == self.NORMAL:
             def pensar_y_mostrar():
                 texto = self.ia_pensar()
                 if texto:
-                    cx, cy = self._centro_pantalla()
-                    self.root.after(0, lambda: self.globo.mostrar(texto, cx, int(self.y)))
-            
+                    self._mostrar_mensaje_seguro(texto)
             threading.Thread(target=pensar_y_mostrar, daemon=True).start()
+        
+        self._programar_siguiente_mensaje()
 
+    def _programar_siguiente_mensaje(self):
         siguiente = random.randint(MENSAJE_INTERVALO_MIN, MENSAJE_INTERVALO_MAX)
-        self.root.after(siguiente, self._loop_mensaje_random)
+        self.timer_msg.start(siguiente)
 
+    def _mostrar_mensaje_seguro(self, texto):
+        # QTimer.singleShot para ejecutar en el hilo principal
+        QTimer.singleShot(0, lambda: self.globo.mostrar(texto, int(self.x + CONFIG["pet_size"] // 2), int(self.y)))
 
-# ══════════════════════════════════════════════════════════════════
-#  PUNTO DE ENTRADA
-# ══════════════════════════════════════════════════════════════════
+    def _loop_contexto_ia(self):
+        if IA_DISPONIBLE:
+            def scan():
+                apps = set()
+                try:
+                    for proc in psutil.process_iter(['name']):
+                        name = proc.info['name'].lower()
+                        if name not in APPS_IGNORAR and not name.startswith("service"):
+                            apps.add(name.replace(".exe", "").capitalize())
+                    self.contexto_apps = list(apps)[:10]
+                    if self.contexto_apps:
+                        guardar_habito(self.contexto_apps[0], self.estado)
+                except: pass
+            threading.Thread(target=scan, daemon=True).start()
+
+    def ia_pensar(self, contexto_especial=None):
+        if not IA_DISPONIBLE:
+            return "..."
+        
+        ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "nada especial"
+        habitos = obtener_resumen_habitos()
+        
+        emocion_ia = "CURIOSO" 
+        if self.estado == self.FELIZ: emocion_ia = "FELIZ"
+        if self.estado in (self.HAMBRE, self.GRITANDO): emocion_ia = "HAMBRE"
+        
+        instrucciones_identidad = (
+            "Tu nombre es Dewey. Eres una criatura digital curiosa, inteligente y juguetona. "
+            "Estilo: Natural, espontáneo, ultra corto (máximo 12 palabras). "
+            "NUNCA digas 'Como modelo de lenguaje'."
+        )
+
+        user_prompt = f"Humor: {emocion_ia}. Apps: {ctx_apps}."
+        if contexto_especial:
+            user_prompt = f"EVENTO: {contexto_especial}. " + user_prompt
+
+        prompt = f"{instrucciones_identidad}\nContexto: {user_prompt}\nDewey dice:"
+        
+        try:
+            res = ollama.generate(model='tinyllama', prompt=prompt, options={"num_predict": 45, "temperature": 0.9, "stop": ["\n", "Dewey:"]})
+            return res['response'].strip().replace('"', '')
+        except:
+            return "¡Hola!"
+
 if __name__ == "__main__":
-    print("🐾 Dewey_vr2.0 — Edición IA Autónoma")
-    print("━" * 40)
-    print("  • Se mueve y salta por tu pantalla")
-    print("  • Aparece comida cada ~13 seg → arrástrala a la mascota")
-    print("  • Sin comida → empieza a gritar")
-    print("  • 🧠 IA AUTÓNOMA: Dewey observa tus apps y piensa por sí solo")
-    print()
-    if IA_DISPONIBLE:
-        print("  ✓ Ollama & psutil detectados — Cerebro activado")
-    else:
-        print("  ✗ IA no disponible — Usando frases predefinidas")
-        print("    Instala: pip install ollama psutil")
-    print()
-    print("  ✓ Imágenes PNG habilitadas")
-    print("━" * 40 + "\n")
-    Mascota()
+    app = QApplication(sys.argv)
+    mascota = Mascota()
+    sys.exit(app.exec())
