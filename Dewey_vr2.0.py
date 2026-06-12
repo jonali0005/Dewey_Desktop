@@ -13,7 +13,7 @@ import threading
 import sqlite3
 import logging
 
-# Configurar logging (solo a consola para evitar bloqueos de archivo)
+# Configurar logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -115,9 +115,9 @@ CONFIG = {
     "salto_velocidad":     0.15,
     "move_intervalo":      40,
     "nueva_dir_intervalo": 120,
-    "pet_size":            140,
-    "pet_img_size":        80,
-    "comida_size":         40,
+    "pet_size":            120,
+    "pet_img_size":        90,
+    "comida_size":         45,
 }
 
 # ══════════════════════════════════════════════════════════════════
@@ -126,9 +126,8 @@ CONFIG = {
 class GloboDialogo(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_NoSystemBackground)
         self.setStyleSheet("background: transparent; border: none;")
         
         self.texto = ""
@@ -144,7 +143,6 @@ class GloboDialogo(QWidget):
     def mostrar(self, texto: str, x: int, y: int):
         if not texto or texto.strip() == "": return
         
-        # Limpiar texto de basura común de los modelos
         texto = texto.split("\n")[0].strip()
         if len(texto) > 100: texto = texto[:97] + "..."
 
@@ -162,7 +160,6 @@ class GloboDialogo(QWidget):
         self.resize(tw, th)
         self.label.setGeometry(0, 0, tw, th - 15)
         
-        # Reposicionar para que no salga de pantalla
         screen = QApplication.primaryScreen().geometry()
         bx = max(10, min(x - tw // 2, screen.width() - tw - 10))
         by = max(10, min(y - th - 5, screen.height() - th - 50))
@@ -186,7 +183,6 @@ class GloboDialogo(QWidget):
         path = QPainterPath()
         path.addRoundedRect(QRectF(2, 2, w - 4, bh - 4), radius, radius)
         
-        # Cola centrada
         cx = w // 2
         path.moveTo(cx - cola_w // 2, bh - 4)
         path.lineTo(cx, h - 2)
@@ -212,32 +208,30 @@ class Comida(QWidget):
     def __init__(self, emoji, x, y):
         super().__init__()
         self.emoji = emoji
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_NoSystemBackground)
         self.setStyleSheet("background: transparent; border: none;")
-        self.setAutoFillBackground(False)
         
         size = CONFIG["comida_size"]
         self.resize(size, size)
         self.move(x, y)
-        
-        self.label = QLabel(emoji, self)
-        self.label.setAlignment(Qt.AlignCenter)
-        self.label.setFont(QFont("Arial", 22))
-        self.label.setGeometry(0, 0, size, size)
-        self.label.setStyleSheet("background: transparent;")
         
         self._drag_pos = None
         self.being_dragged = False
         
         self.setWindowOpacity(0)
         self.anim = QPropertyAnimation(self, b"windowOpacity")
-        self.anim.setDuration(400)
+        self.anim.setDuration(500)
         self.anim.setStartValue(0)
-        self.anim.setEndValue(1)
+        self.anim.setEndValue(0.99)
         self.anim.start()
         self.show()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setFont(QFont("Segoe UI Emoji", 26))
+        painter.drawText(self.rect(), Qt.AlignCenter, self.emoji)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -273,19 +267,12 @@ class Mascota(QWidget):
         iniciar_db()
         self.sig_mostrar_mensaje.connect(self._on_sig_mostrar_mensaje)
 
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_NoSystemBackground)
         self.setStyleSheet("background: transparent; border: none;")
-        self.setAutoFillBackground(False)
         
         size = CONFIG["pet_size"]
         self.resize(size, size)
-        
-        self.pet_label = QLabel(self)
-        self.pet_label.setAlignment(Qt.AlignCenter)
-        self.pet_label.setGeometry(0, 0, size, size)
-        self.pet_label.setStyleSheet("background: transparent;")
         
         self._pixmaps = {}
         self._setup_imagenes()
@@ -334,12 +321,13 @@ class Mascota(QWidget):
         self.timer_contexto.timeout.connect(self._loop_contexto_ia)
         self.timer_contexto.start(60_000)
         
+        self.setWindowOpacity(0.99)
         self.move(int(self.x), int(self.y))
         self.show()
         self._loop_contexto_ia()
 
     def _on_sig_mostrar_mensaje(self, texto):
-        self.globo.mostrar(texto, int(self.x + CONFIG["pet_size"] // 2), int(self.y))
+        self.globo.mostrar(texto, int(self.x + self.width() // 2), int(self.y))
 
     def _setup_imagenes(self):
         img_sz = CONFIG["pet_img_size"]
@@ -352,11 +340,22 @@ class Mascota(QWidget):
                         pix = pix.scaled(img_sz, img_sz, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                         self._pixmaps[estado].append(pix)
         
-        if self._pixmaps.get(self.NORMAL):
-            self.pet_label.setPixmap(self._pixmaps[self.NORMAL][0])
-        else:
+        if not self._pixmaps.get(self.NORMAL):
             log_debug("ERROR FATAL: No hay imágenes.")
             sys.exit(1)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        
+        imgs = self._pixmaps.get(self.estado, self._pixmaps.get(self.NORMAL))
+        if imgs:
+            idx = 1 if len(imgs) > 1 and abs(math.sin(self.salto_phase)) > 0.5 else 0
+            pix = imgs[idx]
+            x = (self.width() - pix.width()) // 2
+            y = (self.height() - pix.height()) // 2
+            painter.drawPixmap(x, y, pix)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -383,7 +382,7 @@ class Mascota(QWidget):
     def _loop_movimiento(self):
         screen = QApplication.primaryScreen().geometry()
         sw, sh = screen.width(), screen.height()
-        size = CONFIG["pet_size"]
+        size = self.width()
 
         self.dir_timer += 1
         if self.dir_timer >= CONFIG["nueva_dir_intervalo"]:
@@ -401,12 +400,7 @@ class Mascota(QWidget):
         self.y = self.base_y - abs(math.sin(self.salto_phase)) * CONFIG["salto_altura"]
 
         self.move(int(self.x), int(self.y))
-        
-        imgs = self._pixmaps.get(self.estado, self._pixmaps.get(self.NORMAL))
-        if imgs:
-            idx = 1 if len(imgs) > 1 and abs(math.sin(self.salto_phase)) > 0.5 else 0
-            self.pet_label.setPixmap(imgs[idx])
-
+        self.update() # Forzar repintado
         self.globo.mover(int(self.x + size // 2), int(self.y))
 
     def _loop_hambre(self):
@@ -443,7 +437,7 @@ class Mascota(QWidget):
         threading.Thread(target=reaccionar, daemon=True).start()
 
     def _loop_colision_comida(self):
-        px, py = self.x + 70, self.y + 70
+        px, py = self.x + self.width()//2, self.y + self.height()//2
         for comida in list(self.comidas):
             c = comida.get_center()
             dist = math.hypot(px - c.x(), py - c.y())
