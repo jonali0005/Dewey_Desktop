@@ -12,6 +12,30 @@ import os
 import threading
 import sqlite3
 import logging
+import ctypes
+from ctypes import wintypes
+
+# Atributos de DWM para Windows 11
+DWMWA_NCRENDERING_POLICY = 2
+DWMNCRP_DISABLED = 1
+DWMWA_WINDOW_CORNER_PREFERENCE = 33
+DWMWCP_DONOTROUND = 1
+
+def desactivar_efectos_windows(win_id):
+    """Obliga a Windows 11 a no poner bordes ni suavizados a la ventana."""
+    try:
+        dwmapi = ctypes.WinDLL("dwmapi")
+        hwnd = wintypes.HWND(win_id)
+        
+        # Desactivar renderizado de bordes/sombras del sistema
+        policy = wintypes.DWORD(DWMNCRP_DISABLED)
+        dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY, ctypes.byref(policy), ctypes.sizeof(policy))
+        
+        # Desactivar esquinas redondeadas (específico de Win11)
+        corner = wintypes.DWORD(DWMWCP_DONOTROUND)
+        dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ctypes.byref(corner), ctypes.sizeof(corner))
+    except Exception as e:
+        pass
 
 # Configurar logging
 logging.basicConfig(
@@ -117,7 +141,7 @@ CONFIG = {
     "nueva_dir_intervalo": 120,
     "pet_size":            120,
     "pet_img_size":        90,
-    "comida_size":         45,
+    "comida_size":         60,
 }
 
 # ══════════════════════════════════════════════════════════════════
@@ -128,7 +152,6 @@ class GloboDialogo(QWidget):
         super().__init__()
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background: transparent; border: none;")
         
         self.texto = ""
         self.timer_ocultar = QTimer()
@@ -210,7 +233,7 @@ class Comida(QWidget):
         self.emoji = emoji
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background: transparent; border: none;")
+        self.setStyleSheet("background:transparent;")
         
         size = CONFIG["comida_size"]
         self.resize(size, size)
@@ -219,18 +242,18 @@ class Comida(QWidget):
         self._drag_pos = None
         self.being_dragged = False
         
-        self.setWindowOpacity(0)
-        self.anim = QPropertyAnimation(self, b"windowOpacity")
-        self.anim.setDuration(500)
-        self.anim.setStartValue(0)
-        self.anim.setEndValue(0.99)
-        self.anim.start()
+        # Opacidad al 100% para evitar que Windows pinte el fondo de gris
+        self.setWindowOpacity(1.0)
         self.show()
+        desactivar_efectos_windows(self.winId())
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setFont(QFont("Segoe UI Emoji", 26))
+        
+        # Dibujar emoji centrado
+        font = QFont("Segoe UI Emoji", 28)
+        painter.setFont(font)
         painter.drawText(self.rect(), Qt.AlignCenter, self.emoji)
 
     def mousePressEvent(self, event):
@@ -269,7 +292,7 @@ class Mascota(QWidget):
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background: transparent; border: none;")
+        self.setStyleSheet("background:transparent;")
         
         size = CONFIG["pet_size"]
         self.resize(size, size)
@@ -321,7 +344,7 @@ class Mascota(QWidget):
         self.timer_contexto.timeout.connect(self._loop_contexto_ia)
         self.timer_contexto.start(60_000)
         
-        self.setWindowOpacity(0.99)
+        self.setWindowOpacity(1.0)
         self.move(int(self.x), int(self.y))
         self.show()
         self._loop_contexto_ia()
@@ -400,7 +423,7 @@ class Mascota(QWidget):
         self.y = self.base_y - abs(math.sin(self.salto_phase)) * CONFIG["salto_altura"]
 
         self.move(int(self.x), int(self.y))
-        self.update() # Forzar repintado
+        self.update() 
         self.globo.mover(int(self.x + size // 2), int(self.y))
 
     def _loop_hambre(self):
