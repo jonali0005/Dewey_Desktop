@@ -128,6 +128,8 @@ class GloboDialogo(QWidget):
         super().__init__()
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+        self.setStyleSheet("background: transparent; border: none;")
         
         self.texto = ""
         self.timer_ocultar = QTimer()
@@ -142,7 +144,7 @@ class GloboDialogo(QWidget):
     def mostrar(self, texto: str, x: int, y: int):
         if not texto or texto.strip() == "": return
         
-        # Limpiar texto de basura común de tinyllama
+        # Limpiar texto de basura común de los modelos
         texto = texto.split("\n")[0].strip()
         if len(texto) > 100: texto = texto[:97] + "..."
 
@@ -191,7 +193,7 @@ class GloboDialogo(QWidget):
         path.lineTo(cx + cola_w // 2, bh - 4)
         path.closeSubpath()
         
-        painter.setBrush(QBrush(QColor(255, 253, 231, 255))) # Sólido
+        painter.setBrush(QBrush(QColor(255, 253, 231, 255))) 
         painter.setPen(QPen(QColor(100, 100, 100, 200), 2))
         painter.drawPath(path)
 
@@ -212,6 +214,9 @@ class Comida(QWidget):
         self.emoji = emoji
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+        self.setStyleSheet("background: transparent; border: none;")
+        self.setAutoFillBackground(False)
         
         size = CONFIG["comida_size"]
         self.resize(size, size)
@@ -221,6 +226,7 @@ class Comida(QWidget):
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setFont(QFont("Arial", 22))
         self.label.setGeometry(0, 0, size, size)
+        self.label.setStyleSheet("background: transparent;")
         
         self._drag_pos = None
         self.being_dragged = False
@@ -269,6 +275,9 @@ class Mascota(QWidget):
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+        self.setStyleSheet("background: transparent; border: none;")
+        self.setAutoFillBackground(False)
         
         size = CONFIG["pet_size"]
         self.resize(size, size)
@@ -276,6 +285,7 @@ class Mascota(QWidget):
         self.pet_label = QLabel(self)
         self.pet_label.setAlignment(Qt.AlignCenter)
         self.pet_label.setGeometry(0, 0, size, size)
+        self.pet_label.setStyleSheet("background: transparent;")
         
         self._pixmaps = {}
         self._setup_imagenes()
@@ -467,7 +477,7 @@ class Mascota(QWidget):
         ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "nada"
         try:
             res = ollama.chat(model='qwen2.5:1.5b', messages=[
-                {'role': 'system', 'content': 'Eres Dewey, una mascota virtual. Habla en ESPAÑOL. Responde con UNA frase muy corta (max 6 palabras) como una mascota curiosa. NO repitas instrucciones.'},
+                {'role': 'system', 'content': 'Eres Dewey, una mascota virtual, muy curioso, pregunton y siempre dispuesto a ayudar. Habla en ESPAÑOL. Responde con UNA frase muy corta (max 8 palabras) como una mascota curiosa. NO repitas instrucciones.'},
                 {'role': 'user', 'content': f'Apps: {ctx_apps}. Estado: {self.estado}. Evento: {contexto_especial if contexto_especial else "ninguno"}'}
             ], options={"temperature": 0.8, "num_predict": 20})
             return res['message']['content'].strip().replace('"', '')
