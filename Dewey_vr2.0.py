@@ -47,9 +47,9 @@ def log_debug(msg):
     print(f"DEBUG: {msg}")
     sys.stdout.flush()
 
-from PySide6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QMenu, QInputDialog, QLineEdit, QMessageBox
 from PySide6.QtCore import Qt, QTimer, QPoint, QSize, Signal, QPropertyAnimation, QEasingCurve, QRectF
-from PySide6.QtGui import QPixmap, QPainter, QColor, QFont, QPolygon, QPen, QBrush, QPainterPath
+from PySide6.QtGui import QPixmap, QPainter, QColor, QFont, QPolygon, QPen, QBrush, QPainterPath, QAction
 
 # Intentar importar librerías para la IA
 try:
@@ -66,7 +66,8 @@ APPS_IGNORAR = {
     "idle", "system", "searchhost.exe"
 }
 
-DB_PATH = "dewey_memoria.db"
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(APP_DIR, "dewey_memoria.db")
 
 # ══════════════════════════════════════════════════════════════════
 #  BASE DE DATOS: SQLite
@@ -82,8 +83,45 @@ def iniciar_db():
             estado_mascota TEXT
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS preguntas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            pregunta TEXT,
+            contexto TEXT,
+            estado_mascota TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS respuestas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            pregunta_id INTEGER,
+            respuesta TEXT,
+            modelo TEXT,
+            contexto TEXT,
+            estado_mascota TEXT,
+            FOREIGN KEY(pregunta_id) REFERENCES preguntas(id)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS estados_animo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            estado TEXT,
+            hambre REAL,
+            contexto_apps TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuario (
+            clave TEXT PRIMARY KEY,
+            valor TEXT
+        )
+    ''')
     conn.commit()
     conn.close()
+
 
 def guardar_habito(app, estado):
     try:
@@ -93,6 +131,48 @@ def guardar_habito(app, estado):
         conn.commit()
         conn.close()
     except: pass
+
+
+def guardar_estado_animo(estado, hambre, contexto_apps):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO estados_animo (estado, hambre, contexto_apps) VALUES (?, ?, ?)",
+            (estado, hambre, ", ".join(contexto_apps) if contexto_apps else "")
+        )
+        conn.commit()
+        conn.close()
+    except: pass
+
+
+def guardar_pregunta(pregunta, contexto, estado):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO preguntas (pregunta, contexto, estado_mascota) VALUES (?, ?, ?)",
+            (pregunta, contexto or "", estado)
+        )
+        pregunta_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return pregunta_id
+    except: return None
+
+
+def guardar_respuesta(pregunta_id, respuesta, modelo="ollama", contexto="", estado=""):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO respuestas (pregunta_id, respuesta, modelo, contexto, estado_mascota) VALUES (?, ?, ?, ?, ?)",
+            (pregunta_id, respuesta, modelo, contexto or "", estado)
+        )
+        conn.commit()
+        conn.close()
+    except: pass
+
 
 def obtener_resumen_habitos():
     try:
@@ -108,6 +188,75 @@ def obtener_resumen_habitos():
         conn.close()
         return ", ".join([f"{a} ({f} veces)" for a, f in res])
     except: return "ninguno todavía"
+
+
+def obtener_contexto_usuario():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT estado, hambre, contexto_apps
+            FROM estados_animo
+            ORDER BY fecha DESC LIMIT 3
+        ''')
+        estados = cursor.fetchall()
+        cursor.execute('''
+            SELECT pregunta, respuesta
+            FROM preguntas
+            JOIN respuestas ON respuestas.pregunta_id = preguntas.id
+            ORDER BY respuestas.fecha DESC LIMIT 3
+        ''')
+        qrs = cursor.fetchall()
+        conn.close()
+
+        partes = []
+        if estados:
+            partes.append("Ultimos estados: " + "; ".join([f"{e[0]} (hambre {e[1]:.1f})[{e[2]}]" for e in estados]))
+        if qrs:
+            partes.append("Ultimas preguntas: " + "; ".join([f"{q[0]} => {q[1]}" for q in qrs]))
+        return " | ".join(partes)
+    except:
+        return ""
+
+
+def obtener_historial():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT fecha, estado, hambre, contexto_apps
+            FROM estados_animo
+            ORDER BY fecha DESC LIMIT 5
+        ''')
+        estados = cursor.fetchall()
+        cursor.execute('''
+            SELECT fecha, pregunta, contexto, estado_mascota
+            FROM preguntas
+            ORDER BY fecha DESC LIMIT 5
+        ''')
+        preguntas = cursor.fetchall()
+        cursor.execute('''
+            SELECT fecha, respuesta, modelo, estado_mascota
+            FROM respuestas
+            ORDER BY fecha DESC LIMIT 5
+        ''')
+        respuestas = cursor.fetchall()
+        conn.close()
+
+        partes = []
+        if estados:
+            partes.append("Estados recientes:")
+            partes.extend([f"{e[0]} - {e[1]} - hambre {e[2]:.1f} - apps: {e[3]}" for e in estados])
+        if preguntas:
+            partes.append("\nPreguntas recientes:")
+            partes.extend([f"{p[0]} - {p[1]} - estado {p[3]}" for p in preguntas])
+        if respuestas:
+            partes.append("\nRespuestas recientes:")
+            partes.extend([f"{r[0]} - {r[1]} - modelo {r[2]} - estado {r[3]}" for r in respuestas])
+        return "\n".join(partes) if partes else "No hay historial disponible."
+    except:
+        return "No hay historial disponible."
+
 
 def resource_path(relative_path):
     try:
@@ -385,7 +534,52 @@ class Mascota(QWidget):
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         elif event.button() == Qt.RightButton:
-            self._cerrar()
+            self._mostrar_menu(event.globalPosition().toPoint())
+
+    def _mostrar_menu(self, pos):
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: white;
+                color: black;
+                border: 1px solid #CCCCCC;
+                border-radius: 5px;
+            }
+            QMenu::item {
+                padding: 8px 25px;
+            }
+            QMenu::item:selected {
+                background-color: #F0F0F0;
+            }
+        """)
+        
+        accion_preguntar = QAction("Preguntar algo", self)
+        accion_historial = QAction("Ver historial", self)
+        accion_cerrar = QAction("Cerrar", self)
+        
+        menu.addAction(accion_preguntar)
+        menu.addAction(accion_historial)
+        menu.addAction(accion_cerrar)
+        
+        accion_preguntar.triggered.connect(self._preguntar_algo)
+        accion_historial.triggered.connect(self._mostrar_historial)
+        accion_cerrar.triggered.connect(self._cerrar)
+        
+        menu.exec(pos)
+
+    def _preguntar_algo(self):
+        pregunta, ok = QInputDialog.getText(self, "Preguntar a Dewey", "Escribe tu pregunta:", QLineEdit.Normal, "")
+        if ok and pregunta.strip():
+            pregunta_id = guardar_pregunta(pregunta.strip(), ", ".join(self.contexto_apps) if self.contexto_apps else "", self.estado)
+            def pensar():
+                respuesta = self.ia_pensar(contexto_especial=pregunta.strip())
+                self.sig_mostrar_mensaje.emit(respuesta)
+                guardar_respuesta(pregunta_id, respuesta, modelo="ollama", contexto=", ".join(self.contexto_apps) if self.contexto_apps else "", estado=self.estado)
+            threading.Thread(target=pensar, daemon=True).start()
+
+    def _mostrar_historial(self):
+        historial = obtener_historial()
+        QMessageBox.information(self, "Historial de Dewey", historial)
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton and self._drag_pos:
@@ -485,20 +679,25 @@ class Mascota(QWidget):
                 apps = {p.info['name'].replace(".exe", "").capitalize() for p in psutil.process_iter(['name']) 
                         if p.info['name'].lower() not in APPS_IGNORAR and not p.info['name'].lower().startswith("service")}
                 self.contexto_apps = list(apps)[:8]
-                if self.contexto_apps: guardar_habito(self.contexto_apps[0], self.estado)
+                if self.contexto_apps:
+                    guardar_habito(self.contexto_apps[0], self.estado)
+                guardar_estado_animo(self.estado, self.hambre, self.contexto_apps)
             except: pass
         threading.Thread(target=scan, daemon=True).start()
 
     def ia_pensar(self, contexto_especial=None):
         if not IA_DISPONIBLE: return "¡Hola!"
         ctx_apps = ", ".join(self.contexto_apps) if self.contexto_apps else "nada"
+        historia = obtener_contexto_usuario()
         try:
+            prompt = f'Apps: {ctx_apps}. Estado: {self.estado}. Evento: {contexto_especial if contexto_especial else "ninguno"}. Historial: {historia}'
             res = ollama.chat(model='qwen2.5:1.5b', messages=[
-                {'role': 'system', 'content': 'Eres Dewey, una mascota virtual, muy curioso, pregunton y siempre dispuesto a ayudar. Habla en ESPAÑOL. Responde con UNA frase muy corta (max 8 palabras) como una mascota curiosa. NO repitas instrucciones.'},
-                {'role': 'user', 'content': f'Apps: {ctx_apps}. Estado: {self.estado}. Evento: {contexto_especial if contexto_especial else "ninguno"}'}
+                {'role': 'system', 'content': 'Eres Dewey, una mascota virtual, muy curioso, pregunton y siempre dispuesto a ayudar. Habla en ESPAÑOL. Responde con UNA frase muy corta (max 13 palabras) como una mascota curiosa. NO repitas instrucciones.'},
+                {'role': 'user', 'content': prompt}
             ], options={"temperature": 0.8, "num_predict": 20})
             return res['message']['content'].strip().replace('"', '')
-        except: return "¡Miau!"
+        except:
+            return "¡Miau!"
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
