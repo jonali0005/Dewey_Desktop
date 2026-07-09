@@ -195,25 +195,34 @@ def obtener_contexto_usuario():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT estado, hambre, contexto_apps
+            SELECT estado, hambre, contexto_apps, fecha
             FROM estados_animo
-            ORDER BY fecha DESC LIMIT 3
+            ORDER BY fecha DESC
         ''')
         estados = cursor.fetchall()
         cursor.execute('''
-            SELECT pregunta, respuesta
+            SELECT pregunta, respuesta, contexto, estado_mascota, fecha
             FROM preguntas
             JOIN respuestas ON respuestas.pregunta_id = preguntas.id
-            ORDER BY respuestas.fecha DESC LIMIT 3
+            ORDER BY respuestas.fecha DESC
         ''')
         qrs = cursor.fetchall()
+        cursor.execute('SELECT COUNT(*) FROM estados_animo')
+        total_estados = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM preguntas')
+        total_preguntas = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM respuestas')
+        total_respuestas = cursor.fetchone()[0]
         conn.close()
 
         partes = []
         if estados:
-            partes.append("Ultimos estados: " + "; ".join([f"{e[0]} (hambre {e[1]:.1f})[{e[2]}]" for e in estados]))
+            ult = estados[:10]
+            partes.append("Ultimos estados: " + "; ".join([f"{e[3]} {e[0]}(hambre {e[1]:.1f}) apps:{e[2]}" for e in ult]))
         if qrs:
-            partes.append("Ultimas preguntas: " + "; ".join([f"{q[0]} => {q[1]}" for q in qrs]))
+            ult_p = qrs[:10]
+            partes.append("Ultimas preguntas-respuestas: " + "; ".join([f"{q[4]} {q[0]} -> {q[1]} [{q[3]}]" for q in ult_p]))
+        partes.append(f"Totales: estados {total_estados}, preguntas {total_preguntas}, respuestas {total_respuestas}")
         return " | ".join(partes)
     except:
         return ""
@@ -691,7 +700,7 @@ class Mascota(QWidget):
         historia = obtener_contexto_usuario()
         try:
             prompt = f'Apps: {ctx_apps}. Estado: {self.estado}. Evento: {contexto_especial if contexto_especial else "ninguno"}. Historial: {historia}'
-            res = ollama.chat(model='qwen2.5:1.5b', messages=[
+            res = ollama.chat(model='phi-4', messages=[
                 {'role': 'system', 'content': 'Eres Dewey, una mascota virtual, muy curioso, pregunton y siempre dispuesto a ayudar. Habla en ESPAÑOL. Responde con UNA frase muy corta (max 13 palabras) como una mascota curiosa. NO repitas instrucciones.'},
                 {'role': 'user', 'content': prompt}
             ], options={"temperature": 0.8, "num_predict": 20})
